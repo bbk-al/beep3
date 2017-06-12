@@ -1,6 +1,7 @@
 AC_INIT([beep], [0.2], [d.fallaize@ucl.ac.uk])
+AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects])
+m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 LT_INIT
-AM_INIT_AUTOMAKE([-Wall -Werror])
 AC_PROG_CXX
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile \

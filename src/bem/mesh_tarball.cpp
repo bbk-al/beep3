@@ -47,7 +47,7 @@ const std::string MeshTarball::ECM_TAG = "ecm";
 
 void MeshTarball::init() {
 	// first change directory to a safe working location
-#ifdef __DELETED2__
+#ifdef __DELETED__
     char work_dir_template[] = "tmpdir.XXXXXX";
     char* d = (mkdtemp(work_dir_template));
     if (d != nullptr) {
@@ -58,9 +58,9 @@ void MeshTarball::init() {
 		          << std::endl;
         throw MeshTarball_Exception();
     }
-#else // __DELETED2__
+#else // __DELETED__
 	fs::create_directories(work_dir);
-#endif // __DELETED2__
+#endif // __DELETED__
 
 //     try 
 //     {
@@ -73,18 +73,18 @@ void MeshTarball::init() {
 //     }
 
     // extract the contents of the mesh tarball
-#ifdef __DELETED2__
+#ifdef __DELETED__
     chdir(work_dir.c_str());
     extract("../" + mtz_filename);
     chdir("..");
-#else // __DELETED2__
+#else // __DELETED__
 	fs::path cwd{fs::current_path()};
 	fs::path mtz{mtz_filename};
 	if (mtz.is_relative()) mtz = cwd / mtz;
 	fs::current_path(work_dir);
 	extract(mtz.string());
 	fs::current_path(cwd);
-#endif // __DELETED2__
+#endif // __DELETED__
 
     // try to parse "definition.xml"
     parse_definition_xml();
@@ -92,7 +92,7 @@ void MeshTarball::init() {
 
 MeshTarball::~MeshTarball() {
 	
-#ifndef __DELETED2__
+#ifndef __DELETED__
 	// Directories can be left behind because of temporary nfs files
 	// which disappear after a short delay, allowing the top level
 	// directory to be deleted only after this process exits.
@@ -115,7 +115,7 @@ MeshTarball::~MeshTarball() {
 			std::cerr << "End of entries" << std::endl;
 		} // leaving the directory still in place
 	} while (false);
-#else // __DELETED2__
+#else // __DELETED__
     try {
         // delete the temporary folder
         for (fs::directory_iterator itr(work_dir), end; itr != end; ++itr) {
@@ -126,7 +126,7 @@ MeshTarball::~MeshTarball() {
         
     }
     catch (...) {}
-#endif // __DELETED2__
+#endif // __DELETED__
 }
 
 int MeshTarball::copy_data(struct archive *ar, struct archive *aw)
@@ -193,11 +193,11 @@ void MeshTarball::parse_definition_xml()
 {
 
     // Open the xml config file and parse it
-#ifdef __DELETED2__
+#ifdef __DELETED__
     std::string xml = work_dir + "/" + MESH_DEFINITION_XML;
 #else
     std::string xml = work_dir.string() + "/" + MESH_DEFINITION_XML;
-#endif // __DELETED2__
+#endif // __DELETED__
     TiXmlDocument doc(xml.c_str());
     bool loadOkay = doc.LoadFile();
     bool failed = false;

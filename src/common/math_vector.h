@@ -39,8 +39,6 @@
 #include <pup_stl.h>
 #endif
 
-#define __DELETED__
-
 constexpr double pi = M_PI;
 constexpr double ONE_OVER_4PI = 1.0 / (4.0*pi);
 constexpr double PRECIS = std::numeric_limits<double>::epsilon();
@@ -406,7 +404,6 @@ protected:
 // Inlined methods
 
 // VectorT
-#ifndef __DELETED__
 template<class PrecisionType>
 template<class NewTypeT>
 inline VectorT<PrecisionType>::operator VectorT<NewTypeT>()
@@ -417,7 +414,6 @@ inline VectorT<PrecisionType>::operator VectorT<NewTypeT>()
 	tmp.z = static_cast<PrecisionType>(super::z);
 	return tmp;
 }
-#endif // __DELETED__
 
 template<class PrecisionType>
 inline PrecisionType VectorT<PrecisionType>::operator[](int idx) const

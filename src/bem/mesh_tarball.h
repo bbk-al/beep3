@@ -23,8 +23,6 @@
 #include <boost/filesystem/fstream.hpp>  // Not needed by 1.62.0
 #endif
 
-#define __DELETED__
-
 namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
 
 class MeshTarball {

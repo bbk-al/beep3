@@ -236,15 +236,10 @@ public:
 //TODO NB this should go back to being private, but add in reset_ if needed
     void init_energy_precalcs();
 
-#ifndef __DELETED__
 private:
-#endif
 
     // init a Mesh object from tarball filename
     void init(const std::string&, bool force_planar=false);
-#ifdef __DELETED__
-private:
-#endif
 
     void init_mesh(const fs::path& mesh_filename);
     void init_charges(const fs::path& xyzq_filename);

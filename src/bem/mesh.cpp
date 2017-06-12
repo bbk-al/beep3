@@ -61,7 +61,9 @@ Mesh::Mesh(const std::string& mesh_filename,
     init_charges(xyzqr_path);
     
     // default to charge centroid...
+#if __DELETED__  // This is already done in init_charges and this does nothing!
     calculate_charges_centroid();
+#endif
     
     if (force_planar) {
         create_bezier_triangles<Triangle>();
@@ -225,12 +227,11 @@ void Mesh::init_charges(const fs::path& xyzqr_filename) {
 
 double Mesh::calculate_radius() {
     radius = 0.0;
-int i = 0;
+
     for (std::vector<BasicNodePatch>::const_iterator
 			np_it=node_patches.cbegin(), np_end=node_patches.cend();
          np_it != np_end; ++np_it)
     {
-i++;
         double dist = (*np_it - centre).length();
         radius = (dist > radius) ? dist : radius;
     }
@@ -1173,23 +1174,19 @@ void Mesh::create_node_patches() {
 
 	double planar_area = 0;
 	total_bezier_area = 0.0;
-int i = 0;
 	for (std::vector<BasicTriangle*>::const_iterator
 			it=triangle_ptrs.cbegin(), end=triangle_ptrs.cend();
 		 it != end; ++it)
 	{
-i++;
 		planar_area += (**it).get_planar_area();
 		total_bezier_area += (**it).get_area();
 	}
 
 	// instantiates umbrella-shaped Node Patches
 	unsigned int ctr=0;
-i = 0;
 	for (std::vector<Vertex>::iterator it=vertices.begin(), end=vertices.end();
 		 it != end; ++it)
 	{
-i++;
 		node_patches.push_back(BasicNodePatch(ctr++,*this));
 	}
 
@@ -1436,7 +1433,6 @@ Vector Mesh::calc_reaction_field_force(const Offsets& offs,
 }
 #endif // if 0
 
-#ifndef __DELETED__
 // Add a mesh to the list
 boost::shared_ptr<ListedMesh>
 MeshList::add(const std::string& filename, bool force_planar)
@@ -1453,6 +1449,5 @@ void MeshList::reset_energy_precalcs() {
 		(**mit).init_energy_precalcs();
     }
 }
-#endif // ! __DELETED__
 
 

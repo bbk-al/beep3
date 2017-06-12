@@ -20,7 +20,7 @@ libfmm_la_LDFLAGS = -lgomp
 
 bin_PROGRAMS = test_fmm
 test_fmm_SOURCES = test_fmm.cpp eval_pt.h
-test_fmm_LDADD = libfmm.la ../opencl/libopencl_handler.la
+test_fmm_LDADD = libfmm.la ../opencl/libopencl_handler.la -lpthread -lboost_system
 test_fmm_LDFLAGS = -pg -lgomp
 test_fmm_CPPFLAGS = -g -O2 -fopenmp
 

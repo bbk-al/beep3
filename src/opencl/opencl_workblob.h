@@ -26,6 +26,7 @@ public:
     class EnqueueException : public std::exception {};
 
     friend class OpenCL_Handler;
+	// Explicit destructor prevents move ops;  mutex is scoped but move=>crash
     virtual ~OpenCL_WorkBlob() {}
     virtual const unsigned char* get_opencl_source() { return NULL; }
     virtual void allocate(const cl_context& ocl_gpu_context, const cl_program& ocl_program)=0;

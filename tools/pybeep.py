@@ -37,7 +37,11 @@ class Charge(_Charge, object):
 class Vector(_Vector, object):
     
     def __init__(self, *args):
-        super(Vector, self).__init__(*args)    
+        if len(args) == 1 and type(args[0]) == str:
+            v = args[0][1:-1].strip().split(',')
+            super(Vector, self).__init__(float(v[0]),float(v[1]),float(v[2]))
+        else:
+            super(Vector, self).__init__(*args)    
 
     def normalised(self):
         cp = Vector(self)
@@ -360,8 +364,10 @@ class BEEP(_BEEP, object):
         print("Writing %s ... " %(filename))
         if fmax is None:
             fmax = max([max([fabs(np.f) for np in minst.node_patches]) for minst in self.mesh_instances])
+            print(f"pybeep kinemage {fmax} {min([min([fabs(np.f) for np in minst.node_patches]) for minst in self.mesh_instances])}")
         if hmax is None:
             hmax = max([max([fabs(np.h) for np in minst.node_patches]) for minst in self.mesh_instances])
+            print(f"pybeep kinemage {hmax} {min([min([fabs(np.h) for np in minst.node_patches]) for minst in self.mesh_instances])}")
         
         print(fmax, hmax)
         self.create_kinemage(filename, fmax, hmax, 100, kintools.hundred_red_blue_colours())

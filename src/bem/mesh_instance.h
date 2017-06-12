@@ -177,19 +177,9 @@ private:
     double radius;
 
     const unsigned int instance_id;
-#ifdef __DELETED__
-public:
-    boost::shared_ptr<Mesh> mesh_ptr; // shared_ptr to the reference Mesh
-private:
-#else
     boost::shared_ptr<ListedMesh> mesh_ptr; // shared_ptr to the reference Mesh
-#endif
     
-#ifdef __DELETED__
-public:
     std::vector< boost::shared_ptr<BasicNodePatch> > patches;
-private:
-#endif
     mutable std::vector< boost::shared_ptr<Charge> > charges;
 
     boost::scoped_ptr< Octree< Node<BasicNodePatch>, BasicNodePatch > >
@@ -198,6 +188,12 @@ private:
     
     unsigned int quad_points_per_triangle;
     unsigned int qual_points_per_triangle;
+
+//#define USING_MAXD 1
+#ifdef USING_MAXD  // maxd no longer required
+	// maximum dimension of a triangle for x and y directions
+	std::unique_ptr<double[]> maxd;
+#endif // maxd
 };
 
 #ifdef __DELETED__
@@ -216,10 +212,8 @@ public:
 		return library.add(filename, force_planar);
 	}
 	size_type librarySize() { return library.size(); }
-#ifndef __DELETED__
 	Mesh& getMesh(unsigned int id) { return *(library[id]); }
 	void reset_energy_precalcs() { library.reset_energy_precalcs(); }
-#endif // ! __DELETED__
 
 	// Instance methods
 	boost::shared_ptr<MeshInstance>
@@ -257,6 +251,9 @@ inline MeshInstance::MeshInstance(const MeshInstance& other) :
         mesh_ptr(other.mesh_ptr),
         quad_points_per_triangle(other.quad_points_per_triangle),
         qual_points_per_triangle(other.qual_points_per_triangle)
+#ifdef USING_MAXD  // maxd no longer required
+		,maxd(std::make_unique<double[]>(2)) // Each copy must have own version
+#endif // maxd
 {
 //NB emplace?
 	patches.insert(patches.end(), other.patches.begin(), other.patches.end());
@@ -275,6 +272,9 @@ inline MeshInstance::MeshInstance(MeshInstance&& other) :
         mesh_ptr(other.mesh_ptr),
         quad_points_per_triangle(other.quad_points_per_triangle),
         qual_points_per_triangle(other.qual_points_per_triangle)
+#ifdef USING_MAXD  // maxd no longer required
+		,maxd(std::move(other.maxd))	// Ok to move values
+#endif // maxd
 {
 //NB emplace?
 	patches.insert(patches.end(), other.patches.begin(), other.patches.end());

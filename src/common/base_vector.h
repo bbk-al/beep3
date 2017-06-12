@@ -210,6 +210,11 @@ public:
         return vectors_are_equal(*this, other);
     }
 
+    inline bool operator!=(const thisType& other) const
+    {
+        return !vectors_are_equal(*this, other);
+    }
+
     template<typename T>
     inline void toSpherical(T &rho, T &theta, T &phi) const
     {

@@ -32,8 +32,6 @@
 #include "fmm_globals.h"
 #include "fmm_math_funcs.h"
 
-#define __DELETED__
-
 #define PRECIS std::numeric_limits<double>::epsilon()
 
 namespace fmm
@@ -1368,7 +1366,7 @@ inline void yftophys(const int nexptot,
                 sgn = -sgn;
                 double rtmp = sgn*std::real(fexpe(nexte)*mexpf(nftot+mm));
                 nexte++;
-#ifdef __DELETED2__
+#ifdef __DELETED__
                 double& cmplx_part = mexpphys(nptot+ival).imag();
                 cmplx_part += rtmp;
 #else
@@ -1383,7 +1381,7 @@ inline void yftophys(const int nexptot,
                 sgn = -sgn;
                 double rtmp = sgn*std::real( fexpo(nexto)*mexpf(nftot+mm) );
                 nexto++;
-#ifdef __DELETED2__
+#ifdef __DELETED__
                 double& real_part = mexpphys(nptot+ival).real();
                 real_part += rtmp;
 #else
@@ -1399,7 +1397,7 @@ inline void yftophys(const int nexptot,
     return;
 }
 
-#ifdef __DELETED2__
+#ifdef __DELETED__
 template <int multiplic, int begin, int end, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void fmm::convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
                 const Level_Dependent_FMM_Globals<NTERMS, NLAMBS>& fmm_level_globs,
@@ -1455,7 +1453,7 @@ inline void convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs
     convert_mpole_to_six_planewaves<multiplic,0,multiplic>(fmm_globs,fmm_level_globs,mpole,up,down,north,south,east,west);
 }
 
-#ifdef __DELETED2__
+#ifdef __DELETED__
 template <int multiplic, int begin, int end, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void convert_and_add_accumulated_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
                                             const Level_Dependent_FMM_Globals<NTERMS,NLAMBS>& fmm_level_globs,
@@ -2441,7 +2439,7 @@ inline void rotate_ytoz(const BaseMultipoleHolder<NTERMS>& mpole, // input unrot
 
 }// end namespace
 
-#ifndef __DELETED2__
+#ifndef __DELETED__
 template <int multiplic, int begin, int end, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void fmm::convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
                 const Level_Dependent_FMM_Globals<NTERMS, NLAMBS>& fmm_level_globs,

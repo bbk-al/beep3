@@ -349,15 +349,14 @@ BOOST_PYTHON_MODULE(libBEEP)
     class_<BEEP>("_BEEP", init<double, double, int, int, int, bool>())
         .def(init<const std::string&, bool, bool>())
         .def("load_library_mesh", &BEEP::load_library_mesh, return_value_policy<copy_non_const_reference>())
-#ifndef __DELETED__
 		.def("get_library_mesh", &BEEP::get_library_mesh, 
 			return_value_policy<copy_non_const_reference>())
-		.def("move_mesh_instance", &BEEP::move_mesh_instance,
-			return_value_policy<copy_non_const_reference>())
-#endif // ! __DELETED__
         .def("clear_mesh_instances", &BEEP::clear_mesh_instances)
         .def("insert_mesh_instance", &BEEP::insert_mesh_instance,
 			return_value_policy<copy_non_const_reference>())
+		.def("move_mesh_instance", &BEEP::move_mesh_instance,
+			return_value_policy<copy_non_const_reference>())
+        .def("get_instance_id" , &BEEP::get_instance_id)
         .def("create_kinemage" , &BEEP::create_kinemage)
         .def("solve", &BEEP::solve)
         .def("benchmark", &BEEP::benchmark)

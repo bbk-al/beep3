@@ -673,6 +673,12 @@ public:
 
     inline const ContentType& get_nearest(const Vector& where) const
     {
+static bool warn = true;
+if (warn) {
+std::cerr << "Octree::get_nearest is being used, but is unreliable!" << std::endl;
+warn = false;
+}
+// See MeshInstance::pt_is_internal for a little more information...
         if (size() == 0) { throw std::exception(); }
         const NodeT* node = &(get_node(where));
         std::vector<ContentType*> neighbourhood;
@@ -1055,7 +1061,8 @@ public:
             for (typename NodeList::iterator node_it=node_list.begin(), node_end=node_list.end(); node_it != node_end; ++node_it)
             {
                 NodeT* node = node_it->second;
-                if (node->empty() == true) {
+				// Do not remove the root node as there is a pointer to it
+                if (node->empty() == true && node != root_ptr) {
                     empties.push_back(node_it->first);
                     if (node->parent_ptr) {
                         node->parent_ptr->children[node->get_id_within_parent() - 1] = NULL;

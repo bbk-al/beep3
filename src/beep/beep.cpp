@@ -115,20 +115,10 @@ void BEEP::init(const ConfigFile& config) {
         // Enforce that meshes are inserted into the mesh library in the
         // same order as they appear in the config file
         //NB assume this is just a way of enforcing config consistency
-#ifdef __DELETED__
-        assert(mesh_id == mesh_library.size());
-#else
         assert(mesh_id == meshes.librarySize());
-#endif  // __DELETED__
 
         // add mesh to library
-#ifdef __DELETED__
-        boost::shared_ptr<Mesh> mesh_ptr(new Mesh());
-        mesh_library.push_back( mesh_ptr );
-        mesh_ptr->init(mesh_fname, force_planar);
-#else
         meshes.addMesh(mesh_fname, force_planar);
-#endif // __DELETED__
    }
 
     // Get these from the config.xml (can be overridden by command-line parms)
@@ -173,14 +163,9 @@ void BEEP::init(const ConfigFile& config) {
 			<< quad_points_per_triangle << " quals="
 			<< qual_points_per_triangle << std::endl;
 
-#ifdef __DELETED__
-        boost::shared_ptr<MeshInstance> mesh_instance_ptr( new MeshInstance(mesh_lib_id, mesh_instance_id, mesh_library, offset, rotation, it->dielectric, Dsolvent, quad_points_per_triangle, qual_points_per_triangle) );
-        meshes.push_back( mesh_instance_ptr );
-#else // __DELETED__
 		meshes.add(mesh_lib_id, mesh_instance_id, 
 			       offset, rotation, it->dielectric, Dsolvent,
 			       quad_points_per_triangle, qual_points_per_triangle);
-#endif // __DELETED__
     }
 
     assert(meshes.size() > 0);
@@ -203,14 +188,8 @@ void BEEP::init(const ConfigFile& config) {
 
 Mesh& BEEP::load_library_mesh(const std::string& mtz_filename) {
     // add mesh to library
-#ifdef __DELETED__
-    boost::shared_ptr<Mesh> mesh_ptr(new Mesh());
-    mesh_library.push_back( mesh_ptr );
-    mesh_ptr->init(mtz_filename, force_planar);
-#else
     boost::shared_ptr<ListedMesh> mesh_ptr
 		= meshes.addMesh(mtz_filename, force_planar);
-#endif
     
     unsigned int num_quad_points = (cmdline_quad_points_per_triangle != -1) ? static_cast<unsigned int>(cmdline_quad_points_per_triangle) : DEFAULT_QUADS;
     unsigned int num_qual_points = (cmdline_qual_points_per_triangle != -1) ? static_cast<unsigned int>(cmdline_qual_points_per_triangle) : DEFAULT_QUALS;
@@ -222,10 +201,14 @@ Mesh& BEEP::load_library_mesh(const std::string& mtz_filename) {
 }
 
 void BEEP::clear_mesh_instances(unsigned int start, int end) {
-	// This allows python-like end-point specification
+	// This allows python-like end-point specification with +1 increment
+	if (start >= meshes.size()) return;  // Silently ignore (as if already done)
 	if (end < 0) end = meshes.size() + 1 + end;
-	if (end < start) end = start;  // no-op
-    meshes.erase(meshes.begin()+start, meshes.begin()+end);
+	if (end < start) return;  // no-op
+	// Silently translate beyond-the-end to just end
+    MeshInstanceList::iterator endit = meshes.end();
+	if (end < meshes.size()) endit = meshes.begin()+end;
+    meshes.erase(meshes.begin()+start, endit);
 }
 
 MeshInstance& BEEP::insert_mesh_instance(
@@ -234,19 +217,11 @@ MeshInstance& BEEP::insert_mesh_instance(
 	const double protein_dielectric)
 {
     // check that the mesh_lib_id is valid
-#ifdef __DELETED__
-    if (mesh_lib_id >= mesh_library.size()) {
-        std::cerr << "Bad value for mesh_lib_id: " << mesh_lib_id
-			<< " (" << mesh_library.size() << " meshes defined)" << std::endl;
-        throw std::exception();
-    }
-#else // __DELETED__
     if (mesh_lib_id >= meshes.librarySize()) {
         std::cerr << "Bad value for mesh_lib_id: " << mesh_lib_id
 			<< " (" << meshes.librarySize() << " meshes defined)" << std::endl;
         throw std::exception();
     }
-#endif // ! __DELETED__
 
     // load mesh instance
     unsigned int num_quad_points = (cmdline_quad_points_per_triangle != -1)
@@ -256,25 +231,11 @@ MeshInstance& BEEP::insert_mesh_instance(
 		? static_cast<unsigned int>(cmdline_qual_points_per_triangle)
 		: DEFAULT_QUALS;
 
-#ifdef __DELETED__
-    boost::shared_ptr<MeshInstance> mesh_instance_ptr( new                      MeshInstance(mesh_lib_id, meshes.size(), mesh_library, offset, rotation,        protein_dielectric, Dsolvent, num_quad_points, num_qual_points) );
-    // set unique id on each node patch
-    unsigned int patch_ctr = get_total_patches();
-    for (PatchList::iterator nit=mesh_instance_ptr->patches.begin(),            nend=mesh_instance_ptr->patches.end(); nit != nend; ++nit)
-    {
-        (**nit).set_idx(patch_ctr++);
-    }
-    // add to std::vector of mesh instance pointers
-    meshes.push_back( mesh_instance_ptr );
-    return *mesh_instance_ptr;
-#else // __DELETED__
 	return *meshes.add(mesh_lib_id, meshes.size(), 
 		               offset, rotation, protein_dielectric, Dsolvent,
 		               num_quad_points, num_qual_points);
-#endif // __DELETED__
 }
 
-#ifndef __DELETED__
 MeshInstance& BEEP::move_mesh_instance(
 	unsigned int id,
 	const Vector& translate, const Quaternion& rotate,
@@ -292,7 +253,18 @@ MeshInstance& BEEP::move_mesh_instance(
 	return *meshes.move(id, translate, rotate, protein_dielectric, Dsolvent);
 #endif // if 0
 }
-#endif // ! __DELETED__
+
+int BEEP::get_instance_id(const Vector& pt, int skip_id) const {
+    for (MeshInstanceList::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
+    {
+        const MeshInstance& minst = **mit;
+		if (minst.get_id() == skip_id) continue;
+		if (minst.pt_is_internal(pt)) return minst.get_id();
+	}
+	return -1;  // Invalid id = no id TODO (should be a constexpr)
+}
 
 void BEEP::create_kinemage(
 	const std::string& filename,
@@ -365,12 +337,7 @@ std::string BEEP::benchmark() {
     
     //std::cout << "sizeof a node patch and QP is: " << sizeof(NodePatch) << " " << sizeof(QuadPoint) << std::endl;
 
-    unsigned int num_patches = get_total_patches();
-
-    f_rhs = boost::shared_array<double>(new double[num_patches]);
-    h_rhs = boost::shared_array<double>(new double[num_patches]);
-    f_lhs = boost::shared_array<double>(new double[num_patches]);
-    h_lhs = boost::shared_array<double>(new double[num_patches]);
+	unsigned int num_patches = reset_fh_vals();
 
     boost::scoped_ptr<double> x(new double[2*num_patches]);
     double* xx = x.get();
@@ -413,15 +380,7 @@ RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations) {
     long time_start_solve = myclock();
     
     // num patches
-    unsigned int num_patches = get_total_patches();
-
-    std::cout << "total num patches = " << num_patches << std::endl;
-    
-    // allocate memory - initialised in set_rhs
-    f_rhs = boost::shared_array<double>(new double[num_patches]);
-    h_rhs = boost::shared_array<double>(new double[num_patches]);
-    f_lhs = boost::shared_array<double>(new double[num_patches]);
-    h_lhs = boost::shared_array<double>(new double[num_patches]);
+	unsigned int num_patches = reset_fh_vals();
 
     // Create the return value RunInfo
     RunInfo stats;
@@ -510,38 +469,29 @@ RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations) {
     return stats;
 }
 
-void BEEP::reset_fh_vals() {
+size_t BEEP::reset_fh_vals() {
     // resets the f/h node patch values of the mesh definitions
-#if 1
-//TODO NB this probably isn't right - set 0 on initialisation only?
-	if (f_lhs.get() == nullptr) return;
 	unsigned int num_patches = get_total_patches();
+
+    std::cout << "total num patches = " << num_patches << std::endl;
+    
+    // allocate memory - initialised in set_rhs
+    f_rhs = boost::shared_array<double>(new double[num_patches]);
+    h_rhs = boost::shared_array<double>(new double[num_patches]);
+    f_lhs = boost::shared_array<double>(new double[num_patches]);
+    h_lhs = boost::shared_array<double>(new double[num_patches]);
+
     for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
+        f_rhs[ctr] = 0.0;
+        h_rhs[ctr] = 0.0;
         f_lhs[ctr] = 0.0;
         h_lhs[ctr] = 0.0;
     }
-#endif // if 0
+	return num_patches;
 }
 
 void BEEP::reset_library_fh_vals() {
-#ifdef __DELETED__
-    unsigned int total_ctr=0;
-    for (std::vector< boost::shared_ptr<MeshInstance> >::iterator mit=meshes.   begin(), mend=meshes.end(); mit != mend; ++mit)
-    {
-        MeshInstance& minst = **mit;
-        Mesh& mesh = *minst.mesh_ptr;  // *(mesh_library[minst.lib_id]);
-        std::vector<BasicNodePatch>& lib_node_patches = mesh.get_node_patches();
-        for (unsigned int ctr=0; ctr < lib_node_patches.size(); ++ctr)
-        {
-            BasicNodePatch& np = lib_node_patches[ctr];
-            np.f = f_lhs[total_ctr];
-            np.h = h_lhs[total_ctr];
-            ++total_ctr;
-        }
-    }
-#else // __DELETED__
     meshes.reset_library_fh_vals(f_lhs, h_lhs);
-#endif // __DELETED__
 }
 
 void BEEP::write_fh(const std::string& output_filename) {
@@ -1130,6 +1080,7 @@ long BEEP::set_rhs() {
     // first get the bounding cube for the mesh
     Vector centre = bounding_cube_centre;
     double edge_length = bounding_cube_edge_length;
+std::cout << "BEEP::set_rhs MAX FMM SIZE " << MAX_FMM_SIZE << std::endl;
     rhs_octree.reset(new FMM_Octree_6FIG_ACCURACY
 								(MAX_FMM_SIZE, centre, edge_length) );
     
@@ -1308,29 +1259,8 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
     //cblas_dscal(numCharges*2 - 1,1./hscale,&(b[1]),2);
 
     // INIT INITIAL VALUES to what was set in input fh files
-#ifdef __DELETED__
-    bool not_preconditioned = true;
-    unsigned int xctr=0;
-    const unsigned int offset=num_patches;
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.      end(); mit!=mend; ++mit)
-    {
-        const MeshInstance& minst = **mit;
-        const Mesh& lib_mesh = *minst.mesh_ptr; //*(mesh_library[minst.lib_id]);
-        const std::vector<BasicNodePatch>& patches = lib_mesh.                  get_node_patches();
-        for (unsigned int np_ctr=0; np_ctr < patches.size(); ++np_ctr)
-        {
-            double f_preset = patches[np_ctr].f;
-            double h_preset = patches[np_ctr].h;
-            not_preconditioned = not_preconditioned && f_preset == 0.0 &&       h_preset == 0.0;
-            x[xctr] = f_preset;
-            x[xctr+offset] = h_preset;
-            xctr++;
-        }
-    }
-#else // __DELETED__
 	bool preconditioned = meshes.init_library_fh_vals(x, num_patches);
 //std::cout << "BEEP::gmres preconditioned " << preconditioned << std::endl;
-#endif // __DELETED__
 
 #ifdef PRECONDITION 
 std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
@@ -1377,6 +1307,9 @@ std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
     
     for ( int i=0; i<=m; ++i ) v[i]=V+i*n;
 
+	// Used to avoid incorrect nan results
+	auto NEAR0 = [](double l) -> double { return (l==0?DBL_MIN:l); };
+
     int its=-1;
     {  // New scope -- this section appears to be imported - untouched
         double gmres_beta, h, rd, dd, nrm2b;
@@ -1393,7 +1326,7 @@ std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
         cblas_daxpy(n,-1.,b,1,r,1);
         gmres_beta=cblas_dnrm2(n,r,1);
         cblas_dcopy(n,r,1,v[0],1);
-        cblas_dscal(n,1./gmres_beta,v[0],1);
+        cblas_dscal(n,1./NEAR0(gmres_beta),v[0],1);
 
         y[0]=gmres_beta;
         j=0;
@@ -1411,7 +1344,7 @@ std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
             cblas_dgemv(CblasColMajor,CblasTrans,n,j+1,1.,V,n,v[j+1],1,0.,U+u0j,1);
             cblas_dgemv(CblasColMajor,CblasNoTrans,n,j+1,-1.,V,n,U+u0j,1,1.,v[j+1],1);
             h=cblas_dnrm2(n,v[j+1],1);
-            cblas_dscal(n,1./h,v[j+1],1);
+            cblas_dscal(n,1./NEAR0(h),v[j+1],1);
             for ( int i=0; i<j; ++i ) { // rotiere neue Spalte
             double tmp = c[i]*U[uij]-s[i]*U[uij+1];
             U[uij+1]   = s[i]*U[uij]+c[i]*U[uij+1];
@@ -1421,8 +1354,8 @@ std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
             { // berechne neue Rotation
             rd     = U[uij];
             dd     = sqrt(rd*rd+h*h);
-            c[j]   = rd/dd;
-            s[j]   = -h/dd;
+            c[j]   = rd/NEAR0(dd);
+            s[j]   = -h/NEAR0(dd);
             U[uij] = dd;
             ++uij;
             }
@@ -1436,7 +1369,10 @@ std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
 
         } while ( j<m && fabs(y[j])>=eps*nrm2b );
         { // minimiere bzgl Y
-            cblas_dtpsv(CblasColMajor,CblasUpper,CblasNoTrans,CblasNonUnit,j,U,y,1);
+			if (cblas_dasum(uij, U, 1) == 0 && cblas_dasum(j ,y, 1) == 0)
+				;// Solve Uy'=y where U,y=0 ... continuity as y->0 => y'=y
+			else
+				cblas_dtpsv(CblasColMajor,CblasUpper,CblasNoTrans,CblasNonUnit,j,U,y,1);
             // korrigiere X
             cblas_dgemv(CblasColMajor,CblasNoTrans,n,j,-1.,V,n,y,1,1.,x,1);
         }

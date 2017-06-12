@@ -180,13 +180,13 @@ public:
 	  force_planar(other.force_planar),
 	  skipping_precalcs(false),
 #ifndef __DELETED__
+//NB Lose comma above if restoring original
+	  //mesh_library(other.mesh_library),
 	  meshes(other.meshes)
 	{}
 #else
 //NB Why would you need to *append* the other's mesh_library and meshes?
 // This is replaced above by the copy constructors, which is more obvious...
-	  meshes(other.meshes),
-	  mesh_library(other.mesh_library)
 	{
 		mesh_library.insert(mesh_library.end(), other.mesh_library.begin(),
 		                    other.mesh_library.end());
@@ -205,9 +205,7 @@ public:
     Mesh& load_library_mesh(const std::string& mtz_filename);
 
 	//! Access library mesh
-#ifndef __DELETED__
 	Mesh& get_library_mesh(unsigned int id) { return meshes.getMesh(id); }
-#endif
 
 	//! Clear mesh instances in range [start, end)
     void clear_mesh_instances
@@ -219,14 +217,14 @@ public:
 	    const Vector& location,		//! Offset vector to apply to PDB structure
 		const Quaternion& rotation,	//! Rotation to apply to PDB structure
 	    double dielectric);			//! Protein dielectric to apply
-#ifndef __DELETED__
 	//! Move a mesh instance
 	MeshInstance& move_mesh_instance(
 		unsigned int instance_id,
 	    const Vector& translate,
 		const Quaternion& rotate,
 		double dielectric);
-#endif // ! __DELETED__
+	//! Check if a point is inside a MeshInstance (other than skip_id)
+	int get_instance_id(const Vector& pt, int skip_id = -1) const;
 	//! Create a kinemage file
 	//! \param filename string name of file to write to
     void create_kinemage(const std::string& filename,
@@ -238,7 +236,7 @@ public:
 
     double calculate_energies();
     void calculate_forces();
-	void reset_fh_vals();
+	size_t reset_fh_vals();  // returns as get_total_patches()
     void reset_library_fh_vals();
     void write_fh(const std::string& output_filename);
 
@@ -299,9 +297,7 @@ private:
 
     const double beta0;
 
-#ifdef __DELETED__
-    MeshList mesh_library;
-#endif
+    //MeshList mesh_library;
     MeshInstanceList meshes;
 
 	// reset as needed in solve and benchmark (indirectly)
@@ -348,17 +344,7 @@ inline unsigned int BEEP::get_bem_neighbourhood_size() const {
 }
 
 inline size_t BEEP::get_total_patches() const {
-#ifdef __DELETED__
-        unsigned int total_np=0;
-        for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator     it=meshes.begin(), end=meshes.end(); it != end; ++it)
-        {
-            const MeshInstance& m = **it;
-            total_np += m.get_num_node_patches();
-        }
-        return total_np;
-#else // __DELETED__
 	return meshes.get_total_patches();
-#endif // __DELETED__
 }
 
 inline boost::shared_ptr<BasicNodePatch> BEEP::get_patch_ptr(size_t idx) const

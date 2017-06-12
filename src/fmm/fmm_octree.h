@@ -299,7 +299,7 @@ public:
         long start_explicit_evals = myclock();
         
         // where to put neighbourhood list
-#ifdef __DELETED2__
+#ifdef __DELETED__
         const typename boost::shared_ptr<std::vector< ContentType* > >& neighbourhood = get_neighbourhood_contents(node);
 #else
         const typename boost::shared_ptr<std::vector< ContentType* > >& neighbourhood = super::get_neighbourhood_contents(node);
@@ -568,6 +568,10 @@ private:
 
         const long local_idx = node.get_lc_idx();
 
+		// There may be no levels if this is a simple sphere?
+		if (lexp_arrays.find(node.get_level()) == lexp_arrays.end()) return;
+
+		// Otherwise, evaluate the local expansions...
         boost::shared_array<MultipoleHolder> local_expansions = lexp_arrays.find(node.get_level())->second;
         const MultipoleHolder& locals = local_expansions[local_idx];
 

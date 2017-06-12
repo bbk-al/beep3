@@ -9,6 +9,7 @@
 #include "mesh_instance.h"
 #include <iostream>
 #include <iomanip>
+#include <unordered_map>
 
 
 MeshInstance::MeshInstance(
@@ -28,14 +29,13 @@ MeshInstance::MeshInstance(
 		rotation(rot),
 		quad_points_per_triangle(num_quad_points),
 		qual_points_per_triangle(num_qual_points)
+#ifdef USING_MAXD  // maxd no longer required
+		,maxd(std::make_unique<double[]>(2))
+#endif // maxd
 {
     // rather essential- copy the shared_ptr to the underlying mesh type!
     assert(mesh_lib_id <= mesh_library.size());
-#ifdef __DELETED__
-	mesh_ptr = mesh_library[mesh_lib_id];
-#else
 	mesh_ptr = boost::shared_ptr<ListedMesh>(mesh_library[mesh_lib_id]);
-#endif
     
     init();
     set_dielectrics(protein_dielectric, solvent_dielectric);
@@ -90,22 +90,208 @@ void MeshInstance::reset_mesh_tree() {
     }
 }
 
-bool MeshInstance::pt_is_internal(const Vector& pt) const
-{
-    // if the point is outside of the maximum radius then cannot be
+// Does a line // to z-axis in +ve direction from pt pass through triangle tv?
+// This local function and object makes it easier to test simple cases
+// An unordered map is OTT but why not?  See onedge handling in pt_triangle...
+// Need two unary function objects:
+struct hashFunc{
+    size_t operator()(const Vector &v) const{
+        size_t s = 0;
+        for (int i = 0; i < 3; i++) boost::hash_combine(s, v(i));
+        return s;
+    }
+};
+struct equalsFunc{
+    bool operator()(const Vector& lhs, const Vector& rhs) const{
+        return (lhs.x == rhs.x) && (lhs.y == rhs.y) && (lhs.z == rhs.z);
+    }
+};
+// Map of hit vertices - must be reset by caller of pt_triangle
+static std::unordered_map<Vector, bool, hashFunc, equalsFunc> hitVertices;
+
+// Determine if z-line from pt crosses triangle
+static bool pt_triangle(const Vector& pt, const Vector* tv, int zdir) {
+	constexpr unsigned int perm[6] = { 1, 2, 2, 0, 0, 1 };
+	const Vector z = Vector(0,0,zdir);	// z-line used as indexing is neater
+	int i;		// general index
+
+	// Check straddles
+	for (i = 0; i < 2; i++) {
+		auto il = {tv[0](i),tv[1](i),tv[2](i)};
+		if (pt(i) < std::min<double>(il) || pt(i) > std::max<double>(il)) break;
+	}
+	if (i < 2) return false;
+
+	// Find intersection of z-line with triangle plane
+	for (i = 0; i < 3; i++) if (tv[i] != pt) break;
+	if (i >= 3) {
+		std::cerr << "MeshInstance~pt_triangle found null triangle"
+				  << std::endl;
+		throw std::exception();
+	}
+	const Vector& v = tv[i];
+	// normal to node patch no use here - get a normal to triangle
+	Vector n = (tv[2]-tv[1]).cross(tv[1]-tv[0]);
+	Vector pz;
+	if (z.dot(n) == 0.0) {
+		if ((v-pt).dot(n) == 0.0)
+			pz = pt;
+		else
+			return false;
+	}
+	else {
+		double dz = ((v-pt).dot(n) / z.dot(n));
+		if (dz < 0) return false;  // z-line is _semi_-infinite
+		pz = dz * z + pt;
+	}
+
+	// Is pz in any of the half-planes that define the triangle?
+	// In addition, for any triangle that is crossed at a vertex or edge,
+	// there will be other triangles that are crossed at the same place.
+	// This needs detecting to avoid multiple counts.  Although less than
+	// half the triangles at this stage will be crossed, it is efficient
+	// to carry out the vertex/edge checks here rather than later.
+	Vector q, r;
+	double dot;
+	double onedge = -1.0;
+	for (i = 0; i < 3; i++) {
+		// Get unit vector along an edge and vectors from opposite vertex and pz
+		n = (tv[perm[2*i]]-tv[perm[2*i+1]]).normalised();
+		q = tv[perm[2*i]]-tv[i];
+		r = tv[perm[2*i]]-pz;
+
+		// Check if pz is actually on the edge (or vertex)
+		dot = q.dot(r);	// on edge if parallel, but can be antiparallel...
+		if (dot >= 0.0 && dot*dot == q.length2() * r.length2()) onedge = dot;
+
+		// Obtain the normals to the selected edge from tv[i] and pt
+		q = q - q.dot(n) * n;
+		r = r - r.dot(n) * n;
+#ifdef LOCAL_TEST // DEBUG
+std::cout << "MeshInstance~pt_triangle pt=" << pt << " pz=" << pz
+		<< " T=" << tv[0] << "," << tv[1] << "," << tv[2]
+		<< " n=" << n << " q=" << q << " r=" << r << " s=" << q.dot(r)
+		<< std::endl;
+#endif // DEBUG
+		// If these normals are opposed, then pz is outside triangle
+		if (q.dot(r) < 0) break;
+	}
+	if (i < 3) return false;
+	if (onedge < 0.0) return true;
+
+	// We have a crossing, but it was on a shared edge or vertex...
+	if (onedge == 0.0) {	// Hit a vertex!  Immensely unlikely!
+		// This is actually quite annoying.  The only way to avoid repeats
+		// is to maintain a list of hits;  but that list must be reset
+		// for each caller call, so we have to provide a way to indicate that.
+		// Since this function is local to the module for the one purpose,
+		// (which makes testing it easier) it makes sense to let pt_is_internal
+		// reset the list itself...
+std::cout << "MeshInstance~pt_triangle Way-hey! Hit a vertex!!" << std::endl;
+		if (hitVertices.count(v) > 0) return false;  // Seen it already
+		hitVertices[v] = true;	// Dummy value, key is the key
+		return true;
+	}
+std::cout << "MeshInstance~pt_triangle Hey! Hit an edge!" << std::endl;
+	// Not a vertex, so strictly an edge - this is easy!  Always hit twice...
+	static bool flip = false;
+	flip = !flip;	// This trick is only an issue if caller needs to identify
+	return flip;	// each triangle that is hit;  this just ensures half count.
+}
+
+bool MeshInstance::pt_is_internal(const Vector& pt) const {
+// Alas, the simple algorithm deleted below does not work for meshes - the
+// fix would require finding the nearest point on the triangle plane, then
+// the nearest point to that on each triangle side.  The resulting effort
+// is similar to that of the replacement algorithm but less easily made
+// as efficient.
+    // if the point is outside of the maximum radius then it cannot be
     // inside the mesh instance
     if ((pt - xyz_offset).length() >= radius) return false;
 
+#if 1 // TESTING BOTH METHODS else delete, re-enable __DELETED__ & do returns
+	bool retval;
+	while (true) {
+//#ifdef __DELETED__
     // ok so it's within the maximum radius, still not necessarily
     // internal -- find the nearest node patch and compare this 
     // point to the normal vector of the patch
     const BasicNodePatch& nearest_np = mesh_tree->get_nearest(pt);
-    if ((pt - nearest_np).dot(nearest_np.get_normal()) > 0) return false;
+    if ((pt - nearest_np).dot(nearest_np.get_normal()) > 0) {retval= false; break;}
 
     // if get here then the above test must indicate that the point
     // is on the internal side of the nearest node patch and is 
     // therefore internal to the mesh instance.
-    return true;
+    retval= true; break;
+//#else   // __DELETED __
+	}
+
+	Vector tv[3];	// Triangle - must be copies because frame changes
+	int i, c;		// General and coordinate indices
+
+#ifdef USING_MAXD  // maxd no longer required - sadly!
+	// Lambda to test if triangle is too far from z-line
+	auto tmaxd = [&]() mutable noexcept -> bool  // mutable to match smaxd
+		{ return (tv[i](c) > pt(c)+maxd[c] || tv[i](c) < pt(c)-maxd[c]); };
+	// Lambda to set maxd
+	auto smaxd = [&]() mutable noexcept -> bool
+		{ double d = abs(tv[i](c)-tv[(i+1)%3](c));
+		  if (d > maxd[c]) maxd[c] = d; return false; };
+	// Choice of lambda is made once
+	std::function<bool()> amaxd[] = { tmaxd, smaxd };
+	auto lmaxd = amaxd[maxd[0] <= 0.0];
+#endif // maxd
+
+	// Find the triangles for this mesh and
+	// count number of times a z-line from pt crosses a mesh triangle
+	int cc = 0;	// crossings count
+	const int zdir = 2*(pt.z - xyz_offset.z > 0.0)-1;	// z-direction to use
+	hitVertices.clear();	// See interface to pt_triangle above
+    for (size_t np_ctr=0; np_ctr < patches.size(); ++np_ctr) {
+        const NodePatch& np = dynamic_cast<NodePatch&>(*(patches[np_ctr]));
+        
+		tv[0] = np;
+        Vector local_centre = mesh_ptr->get_centre();
+        std::vector<PointNormal> edge_points;
+        np.get_edge_points(edge_points);
+        for (std::vector<PointNormal>::const_iterator
+				it=edge_points.cbegin(), next_it, end=edge_points.cend();
+			 it!=end; ++it)
+        {
+            next_it = it+1;
+            if (next_it == end) next_it = edge_points.begin();
+            
+            tv[1] = it->pt();
+            tv[1].change_coordinate_frame(local_centre, rotation, xyz_offset);
+            tv[2] = next_it->pt();
+            tv[2].change_coordinate_frame(local_centre, rotation, xyz_offset);
+
+#ifdef USING_MAXD  // maxd no longer required
+			// Depending on whether maxd is initialised, either:
+			//	 Record the maximum x,y difference up to this triangle; or
+			//   Skip any triangles too far from the line for it to cross them.
+			for (c = 0; c < 2; c++) {	// coordinate number 0=x, 1=y
+				for (i = 0; i < 3; i++)	// triangle vertex
+					if (lmaxd()) break; // true => skip
+				if (i < 3) break;
+			}
+			if (c < 2) continue;
+#endif
+
+			// Does z-line does cross the mesh at this triangle?
+			cc += pt_triangle(pt, tv, zdir);
+		}  // each triangle in node patch
+	}  // each node patch
+if (retval != ((cc%2) == 1)) { // Shout and record
+std::cerr << "MeshInstance::pt_is_internal instance " << instance_id
+		<< " new=" << cc << " " << ((cc%2) == 1)
+		<< " old=" << retval << std::endl;
+std::cout << "MeshInstance::pt_is_internal instance " << instance_id
+		<< " new=" << cc << " " << ((cc%2) == 1)
+		<< " old=" << retval << std::endl;
+}
+	return ((cc%2) == 1);  // pt is internal if odd number of crossings
+#endif  // __DELETED__
 }
 
 double MeshInstance::get_potential_at_internal_pt(const Vector& pt) const
@@ -180,7 +366,7 @@ int MeshInstance::move(const Vector& translate, const Quaternion& rotate) {
 #ifndef __LOCAL_MOVES__
 	std::cerr << "MeshInstance::move() has not been implemented" << std::endl;
 	// change the coordinate frame for the mesh and charges
-	// and reset the octree
+	// and reset the octree values
 	// Update current position and rotation
 
 #else // __LOCAL_MOVES__
@@ -203,10 +389,15 @@ std::cout << "MeshInstance::move from " << xyz_offset << " to " << translate << 
 		(**it).force_coefficient_f = np.force_coefficient_f;
 		(**it).force_coefficient_h = np.force_coefficient_h;
 		(**it).gc = np.gc;
-//TODO NB Other values to reset?
+//TODO NB Other values to reset?  quads
 		npctr++;
 #endif // if 0
     }
+
+#ifdef USING_MAXD  // maxd no longer required
+	// Reset maximum dimensions of triangles - will be recalculated when needed
+	for (int i = 0; i < 2; i++) maxd[i] = 0.0;
+#endif // maxd
 
     // set Charges
     for (std::vector<boost::shared_ptr<Charge>>::iterator
@@ -236,15 +427,10 @@ double MeshInstance::calculate_energy(
     // Dsolvent and Dprotein should have been set via set_dielectrics()
     double E = mesh_ptr->calculate_energy(kappa, Dprotein, Dsolvent,
 	                                      fvals, hvals);
-#ifndef __DELETED__
     std::cout << "Energy for mesh " << instance_id << " (lib_id="
 	          << mesh_ptr->get_id() << ") = " << std::setprecision(10)
 	          << E << std::endl;
-#else
-    std::cout << "Energy for mesh " << instance_id << " = "
-			  << std::setprecision(10) << E << std::endl;
     return E;
-#endif // __DELETED__
 }
 
 Vector MeshInstance::calculate_force(
@@ -295,29 +481,30 @@ void MeshInstance::kinemage_fh_vals(
         
         std::string f_name;
         std::string h_name;
+		auto NEAR0 = [](double l) -> double { return (l==0?DBL_MIN:l); };
 
         // figure out the colour name corresponding to the fval
         {  // New scope
             std::stringstream s;
             int f_idx = static_cast<int>(round(
-							static_cast<double>(num_colours)*np.f / fscale
+							static_cast<double>(num_colours)*np.f / NEAR0(fscale)
 						) );
             if (f_idx < 1){
                 f_idx = abs(f_idx);
-                int fcol = f_idx <= num_colours ? f_idx : num_colours+1;
+                int fcol = (f_idx <= num_colours ? f_idx : num_colours+1);
                 s << "red" << "_" << fcol;
             } else {
-                int fcol = f_idx <= num_colours ? f_idx : num_colours+1;
+                int fcol = (f_idx <= num_colours ? f_idx : num_colours+1);
                 s << "blue" << "_" << fcol;
             }
             f_name = s.str();
         }  // End scope
 
-        // figure out the colour name corresponding to the fval
+        // figure out the colour name corresponding to the hval
         {  // New scope
             std::stringstream s;
             int h_idx = static_cast<int>(round(
-							static_cast<double>(num_colours)*np.h / hscale
+							static_cast<double>(num_colours)*np.h / NEAR0(hscale)
 						) );
             if (h_idx < 1){
                 h_idx = abs(h_idx);
@@ -346,13 +533,17 @@ void MeshInstance::kinemage_fh_vals(
             next.change_coordinate_frame(local_centre, rotation, xyz_offset);
 
             // kinemage a quadrilateral with the fh values
-            buf_f << "X " << np.x << " " << np.y << " " << np.z << " "
+            buf_f << "X " << f_name << " "
+					    << np.x << " " << np.y << " " << np.z << " "
+                        << f_name << " "
                         << here.x << " " << here.y << " " << here.z << " "
                         << f_name << " "
                         << next.x << " " << next.y << " " << next.z << "\n";
 
             // kinemage a quadrilateral with the fh values
-            buf_h << "X "  << np.x << " " << np.y << " " << np.z << " "
+            buf_h << "X "  << h_name << " "
+					    << np.x << " " << np.y << " " << np.z << " "
+                        << h_name << " "
                         << here.x << " " << here.y << " " << here.z << " "
                         << h_name << " "
                         << next.x << " " << next.y << " " << next.z << "\n";
@@ -409,7 +600,6 @@ unsigned int MeshInstance::reset_fh_vals(
 
 // MeshInstanceList
 
-#ifndef __DELETED__
 // Add a new mesh instance to the list
 boost::shared_ptr<MeshInstance>
 MeshInstanceList::add(
@@ -430,7 +620,8 @@ MeshInstanceList::add(
 
 //NB Comments inherited from BEEP::insert_mesh_instance
 // minimum separation 5A between node patches
-//     const double minimum_separation = 5.; //     
+//     const double minimum_separation = 5.;
+//     
 //     // loop over the node patch points and ensure that they are not within   an angstrom
 //     // of any other node patch already in the system
 //     for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator      minst_it = begin(), minst_end=end(); minst_it != minst_end; ++    minst_it)
@@ -555,4 +746,4 @@ size_t MeshInstanceList::get_total_patches() const
     }
     return total_np;
 }
-#endif // ! __DELETED__
+

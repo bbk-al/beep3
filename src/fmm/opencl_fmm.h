@@ -362,7 +362,7 @@ void FMM_Resources<EvalPtType>::enqueue(cl_command_queue& ocl_queue)
 
     // Launch kernel
     //printf("clEnqueueNDRangeKernel (evaluation_kernel [%d x %d]) ... ", szGlobalWorkSize[0], szGlobalWorkSize[1], max_group_size);
-    std::cout << std::flush;
+    //std::cout << std::flush;
     err = clEnqueueNDRangeKernel(ocl_queue, m_evaluation_kernel, 2, NULL, szGlobalWorkSize, szLocalWorkSize, 0, NULL, NULL);
     if (err != CL_SUCCESS)
     {

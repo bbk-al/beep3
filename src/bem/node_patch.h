@@ -215,7 +215,7 @@ private:
     
 };
 
-//#define __LOCAL_MOVES__
+#define __LOCAL_MOVES__
 
 // The NodePatch class describes an actual node patch located in universe
 // coordinates- it is linked conceptually to a MeshInstance which holds the

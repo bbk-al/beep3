@@ -158,6 +158,7 @@ void OpenCL_Handler::init_opencl()
     cl_uint num_platforms;
     cl_platform_id* dummy = new cl_platform_id[1024];
     clGetPlatformIDs (1024, dummy, &num_platforms);
+	if (num_platforms > 1) std::cerr << "OpenCL platform count: " << num_platforms << std::endl;
     delete[] dummy;
 
     // Get all OpenCL platform IDs
@@ -171,10 +172,11 @@ void OpenCL_Handler::init_opencl()
     for(cl_uint i = 0; i < num_platforms; ++i)
     {
         clGetPlatformInfo (ocl_platform_ids[i], CL_PLATFORM_NAME, 1024, cBuffer, NULL);
-        //std::cerr << "OpenCL platform info: " << cBuffer << std::endl;
+		if (num_platforms > 1) std::cerr << "OpenCL platform info: " << cBuffer << std::endl;
         if(strstr(cBuffer, "NVIDIA") != NULL || 
            strstr(cBuffer, "ATI Stream") != NULL || 
-           strstr(cBuffer, "AMD Accelerated Parallel Processing") != NULL)
+           strstr(cBuffer, "AMD Accelerated Parallel Processing") != NULL ||
+           strstr(cBuffer, "Clover") != NULL)
         {
             platform_ids.push_back(i);
         }
@@ -182,9 +184,13 @@ void OpenCL_Handler::init_opencl()
 
     // sanity check on nvidia platforms
     if (platform_ids.size() != 1) {
-        std::cerr << "Error init_opencl(), Line " << static_cast<int>(__LINE__) << " in file " << __FILE__ << " !!!\n";
+        std::cerr << "Warning init_opencl(), Line " << static_cast<int>(__LINE__) << " in file " << __FILE__ << " !!!\n";
         std::cerr << "Got " << static_cast<int>(platform_ids.size()) << " OpenCL-compatible (NVIDIA / ATI Stream) platforms.\n";
+#if 0
         throw std::exception();
+#else
+		std::cerr << "Using first one" << std::endl;
+#endif
     }
 
     cl_uint cl_num_devices;
@@ -414,6 +420,8 @@ void OpenCL_Handler::do_work()
                 queued = fifo_queued.size();
                 allocated = fifo_allocated.size();
                 running = fifo_running.size();
+				//if (queued+running > 0)
+				//	std::cout << "OpenCL_Handler::do_work queued " << queued << ", allocated " << allocated << ", running " << running << std::endl;
 
                 // something is running; check to see if it's finished
                 if (running > 0) {

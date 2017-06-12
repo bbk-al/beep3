@@ -40,6 +40,7 @@ public:
         
     QuadPointCache(std::vector< boost::shared_ptr<QuadList> >& cached)
     {
+		OpenCL_WorkBlob::auto_delete = true;
         stored.insert(stored.begin(), cached.begin(), cached.end());
     }
 
@@ -49,6 +50,8 @@ public:
     virtual bool finished() const { return true; }
     virtual size_t device_mem_reqd() const { return 0; }
 
+	// Explicit destructor prevents move ops for this huge structure...
+	// but move ops => crash...?
     virtual ~QuadPointCache() {}
 
 private:
@@ -149,6 +152,7 @@ public:
                             bool auto_del=true,
                             boost::mutex *results_mutex=NULL);
 
+//TODO ownership of the mutex?  i.e. should this class destroy it?  No uses...
     virtual ~BEM_OnDemand_Resources();
     
     const unsigned char* get_opencl_source();
