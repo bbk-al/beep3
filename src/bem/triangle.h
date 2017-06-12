@@ -658,7 +658,7 @@ class Triangle : public BasicTriangle
 protected:
 
     static const unsigned int MAX_SUBDIVIDES = 5;
-    static const double AREA_TOLERANCE = 1e-6;
+    static constexpr double AREA_TOLERANCE = 1e-6;
 
 public:
 

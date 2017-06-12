@@ -358,14 +358,12 @@ class BEEP(_BEEP, object):
         """Create a kinemage representation of the current ensemble (with f/h values)"""
         import kintools
         from math import fabs
-
+        
         print "Writing %s ... " %(filename),
         if fmax is None:
             fmax = max([max([fabs(np.f) for np in minst.node_patches]) for minst in self.mesh_instances])
-            print "\nfmax: %f", fmax
         if hmax is None:
             hmax = max([max([fabs(np.h) for np in minst.node_patches]) for minst in self.mesh_instances])
-            print "\nhmax: %f", hmax
         
         print fmax, hmax
         self.py_kinemage(filename, fmax, hmax, 100, kintools.hundred_red_blue_colours())

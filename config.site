@@ -1,0 +1,4 @@
+test -z "$CXX" && CXX="/d/mw6/u/la002/pjt/build/bin/g++"
+test -z "$CXXCPP" && CXXCPP="/d/mw6/u/la002/pjt/build/bin/g++ -E"
+test -z "$CC" && CC="/d/mw6/u/la002/pjt/build/bin/gcc"
+test -z "$CPP" && CPP="/d/mw6/u/la002/pjt/build/bin/gcc -E"

@@ -104,22 +104,22 @@ DIST_ARCHIVES = $(distdir).tar.gz
 GZIP_ENV = --best
 distuninstallcheck_listfiles = find . -type f -print
 distcleancheck_listfiles = find . -type f -print
-ACLOCAL = ${SHELL} /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices/missing --run aclocal-1.11
-AMTAR = ${SHELL} /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices/missing --run tar
+ACLOCAL = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.1b/missing --run aclocal-1.11
+AMTAR = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.1b/missing --run tar
 AR = ar
-AUTOCONF = ${SHELL} /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices/missing --run autoconf
-AUTOHEADER = ${SHELL} /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices/missing --run autoheader
-AUTOMAKE = ${SHELL} /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices/missing --run automake-1.11
+AUTOCONF = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.1b/missing --run autoconf
+AUTOHEADER = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.1b/missing --run autoheader
+AUTOMAKE = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.1b/missing --run automake-1.11
 AWK = gawk
-CC = gcc
+CC = /d/mw6/u/la002/pjt/build/bin/gcc
 CCDEPMODE = depmode=gcc3
 CFLAGS = -g -O2
 CL_CFLAGS = 
-CL_LIBS = -lOpenCL  -lm
-CPP = gcc -E
-CPPFLAGS = -I/usr/local/cuda-5.0/include -I/d/mw4/u/gd001/usr/include -I/usr/include/python2.6
-CXX = g++
-CXXCPP = g++ -E
+CL_LIBS = 
+CPP = /d/mw6/u/la002/pjt/build/bin/gcc -E
+CPPFLAGS = 
+CXX = /d/mw6/u/la002/pjt/build/bin/g++
+CXXCPP = /d/mw6/u/la002/pjt/build/bin/g++ -E
 CXXDEPMODE = depmode=gcc3
 CXXFLAGS = -g -O2
 CYGPATH_W = echo
@@ -140,14 +140,14 @@ INSTALL_PROGRAM = ${INSTALL}
 INSTALL_SCRIPT = ${INSTALL}
 INSTALL_STRIP_PROGRAM = $(install_sh) -c -s
 LD = /usr/bin/ld -m elf_x86_64
-LDFLAGS = -L/d/mw4/u/gd001/usr/lib -lpython2.6 -lboost_python
+LDFLAGS = 
 LIBOBJS = 
 LIBS = 
 LIBTOOL = $(SHELL) $(top_builddir)/libtool
 LIPO = 
 LN_S = ln -s
 LTLIBOBJS = 
-MAKEINFO = ${SHELL} /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices/missing --run makeinfo
+MAKEINFO = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.1b/missing --run makeinfo
 MKDIR_P = /bin/mkdir -p
 NM = /usr/bin/nm -B
 NMEDIT = 
@@ -160,11 +160,10 @@ PACKAGE_BUGREPORT = d.fallaize@ucl.ac.uk
 PACKAGE_NAME = beep
 PACKAGE_STRING = beep 0.1
 PACKAGE_TARNAME = beep
-PACKAGE_URL = 
 PACKAGE_VERSION = 0.1
 PATH_SEPARATOR = :
-PTHREAD_CC = gcc
-PTHREAD_CFLAGS = 
+PTHREAD_CC = /d/mw6/u/la002/pjt/build/bin/gcc
+PTHREAD_CFLAGS = -pthread
 PTHREAD_LIBS = 
 RANLIB = ranlib
 SED = /bin/sed
@@ -173,12 +172,12 @@ SHELL = /bin/sh
 STRIP = strip
 VERSION = 0.1
 XMKMF = 
-abs_builddir = /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices
-abs_srcdir = /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices
-abs_top_builddir = /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices
-abs_top_srcdir = /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices
-ac_ct_CC = gcc
-ac_ct_CXX = g++
+abs_builddir = /d/mw6/u/la002/pjt/src/beep-0.1b
+abs_srcdir = /d/mw6/u/la002/pjt/src/beep-0.1b
+abs_top_builddir = /d/mw6/u/la002/pjt/src/beep-0.1b
+abs_top_srcdir = /d/mw6/u/la002/pjt/src/beep-0.1b
+ac_ct_CC = /d/mw6/u/la002/pjt/build/bin/gcc
+ac_ct_CXX = 
 ac_ct_DUMPBIN = 
 acx_pthread_config = 
 am__include = include
@@ -206,7 +205,7 @@ host_vendor = unknown
 htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
-install_sh = ${SHELL} /d/mw4/u/gd001/usr/src/beep-0.1-gpu-limit-devices/install-sh
+install_sh = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.1b/install-sh
 libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
@@ -216,7 +215,7 @@ mandir = ${datarootdir}/man
 mkdir_p = /bin/mkdir -p
 oldincludedir = /usr/include
 pdfdir = ${docdir}
-prefix = /d/mw4/u/gd001/usr
+prefix = /d/mw6/u/la002/pjt/build
 program_transform_name = s,x,x,
 psdir = ${docdir}
 sbindir = ${exec_prefix}/sbin
@@ -551,7 +550,7 @@ distcheck: dist
 	*.zip*) \
 	  unzip $(distdir).zip ;;\
 	esac
-	chmod -R a-w $(distdir); chmod a+w $(distdir)
+	chmod -R a-w $(distdir); chmod u+w $(distdir)
 	mkdir $(distdir)/_build
 	mkdir $(distdir)/_inst
 	chmod a-w $(distdir)

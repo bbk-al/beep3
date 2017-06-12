@@ -3,9 +3,6 @@
 
 from pybeep import *
 
-import pqrtools
-pqr2xyzqr = pqrtools.pqr2xyzqr
-
 import tarfile
 from tarfile import TarFile
 import os
@@ -32,8 +29,8 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
             mtz.add(xyzqr_filename, basename(xyzqr_filename))
         elif ext == ".pqr":
             xyzqr_filename = "%s.xyzqr" %(stem_filename)
-            #import pqr2xyzqr
-            pqr2xyzqr(pqr_filename, xyzqr_filename)
+            import pqr2xyzqr
+            pqr2xyzqr.pqr2xyzqr(pqr_filename, xyzqr_filename)
             mtz.add(pqr_filename, basename(pqr_filename))
             mtz.add(xyzqr_filename, basename(xyzqr_filename))
         else:

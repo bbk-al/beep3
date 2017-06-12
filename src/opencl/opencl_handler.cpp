@@ -204,11 +204,11 @@ void OpenCL_Handler::init_opencl()
         std::cerr << "Failed to create any OpenCL contexts.  No devices??\n";
         throw std::exception();
     }
-//#ifdef SINGLE_GPU_ONLY
+#ifdef SINGLE_GPU_ONLY
     if (num_devices > 1) {
         num_devices = 1;
     }
-//#endif
+#endif
     // get the device constraints
     cl_ulong max_size;
     for (unsigned int ii=0; ii < cl_num_devices; ++ii)

@@ -18,7 +18,7 @@
 // (ok not really, but it does need updating...)
 #include "boost/filesystem/operations.hpp" 
 #else
-#define BOOST_FILESYSTEM_VERSION 2
+#define BOOST_FILESYSTEM_VERSION 3
 #include <boost/filesystem.hpp>
 #endif
 

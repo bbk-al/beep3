@@ -2,7 +2,7 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
 /* Define to 1 if you have the <CL/cl.h> header file. */
-#define HAVE_CL_CL_H 1
+/* #undef HAVE_CL_CL_H */
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #define HAVE_DLFCN_H 1
@@ -61,9 +61,6 @@
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "beep"
-
-/* Define to the home page for this package. */
-#define PACKAGE_URL ""
 
 /* Define to the version of this package. */
 #define PACKAGE_VERSION "0.1"
