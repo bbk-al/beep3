@@ -1,5 +1,6 @@
 
 #include <boost/python.hpp>
+#define QUATERNION_REQUIRE_RANDOM	//>>> Remove if math_vector.cpp exists
 #include "../common/math_vector.h"
 #include "../bem/mesh.h"
 #include "../bem/node_patch.h"
@@ -123,6 +124,51 @@ public:
     
 };
 
+// Helper structures for more difficult mappings
+// This avoids breaking modularity in BEEP, where Python interface
+// methods do not belong.  Whenever possible, directly reference the BEEP
+// method in the BOOST_PYTHON_MODULE list below, and only add difficult
+// cases here.
+struct PyVectorHelper {
+	// Essential helpers
+	// Vector::operator+
+	static Vector __py_add(const Vector& v1, const Vector& v2) {
+		return v1 + v2;
+	}
+	// Vector::operator-
+	static Vector __py_subtract(const Vector& v1, const Vector& v2) {
+		return v1 - v2;
+	}
+	// Arithmetic assignments:  cannot handle cast from __VectorT
+	static Vector& __py_imul(Vector& v, double d) {
+		v *= d;
+		return v;
+	}
+	static Vector& __py_itruediv(Vector& v, double d) {
+		v /= d;
+		return v;
+	}
+	// Non-essential helpers
+	// Direct technique to select overloaded method is:
+	//	.def("change_coordinate_frame", static_cast
+	//		<void (Vector::*)(const Vector&, const Quaternion&, const Vector&)>
+	//			(&Vector::change_coordinate_frame) )
+	//	but this is quite cumbersome!  The helper type below simplifies .def:
+	typedef void (Vector::*cqf)(const Vector& f, const Quaternion& q,
+								const Vector& t);
+	static cqf get(cqf fn) { return fn; }
+	typedef void (Vector::*ar)(const Quaternion& rot);
+	static ar get(ar fn) { return fn; }
+};
+
+struct PyBasicNodePatchHelper {
+	// Downcast
+    static Vector& __py_vector(BasicNodePatch& np) {
+		return static_cast<Vector&>(np);
+	}
+};
+
+
 BOOST_PYTHON_MODULE(libBEEP)
 {
     class_<Quaternion>("Quaternion", init<double, double, double, double>())
@@ -136,8 +182,11 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def_readwrite("z", &Quaternion::c)
         .def_readwrite("w", &Quaternion::d)
         .def("__str__", &Quaternion::str)
-        .def("inverse", &Quaternion::inverse);
-
+        .def("inverse", &Quaternion::inverse)
+        .def("normalise", &Quaternion::normalise)
+		.def("rand", &Quaternion::rand).staticmethod("rand")
+		;
+ 
     class_<Vector>("_Vector", init<double, double, double>())
         .def(init<const Vector&>())
         .def(init<const __Vector<float>&>())
@@ -151,13 +200,20 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def("cross",&Vector::cross)
         .def("__normalised",&Vector::normalised)
         .def("normalise", &Vector::normalise)
-        .def("__add__",&Vector::__py_add)
-        .def("__sub__",&Vector::__py_subtract)
+        .def("__add__",&PyVectorHelper::__py_add)
+        .def("__sub__",&PyVectorHelper::__py_subtract)
         .def("__mul__",&Vector::operator*)
-        .def("__div__",&Vector::operator/)
+        .def("__truediv__",&Vector::operator/)
+        .def("__imul__",&PyVectorHelper::__py_imul,
+			return_value_policy<copy_non_const_reference>())
+        .def("__itruediv__",&PyVectorHelper::__py_itruediv,
+			return_value_policy<copy_non_const_reference>())
         .def("__str__", &Vector::__str__)
-        .def("apply_rotation", &Vector::apply_quaternion)
-        .def("change_coordinate_frame", &Vector::py_change_coordinate_frame);
+        .def("apply_rotation", PyVectorHelper::get(&Vector::apply_rotation))
+		.def("change_coordinate_frame",
+			PyVectorHelper::get(&Vector::change_coordinate_frame))
+		;
+        //.def("change_coordinate_frame", &Vector::py_change_coordinate_frame);
 
     class_<Charge>("_Charge", init<const Vector&, double, double>())
         .def(init<const Vector&, double, double>())
@@ -166,17 +222,33 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def_readwrite("x", &Charge::x)
         .def_readwrite("y", &Charge::y)
         .def_readwrite("z", &Charge::z)
-        .def("position", &Charge::py_get_position, return_value_policy<copy_const_reference>())
-        .def("_change_coordinate_frame", &Charge::py_change_coordinate_frame);
+        //.def("position", &Charge::py_get_position, return_value_policy<copy_const_reference>())
+		.def("position", static_cast<const Vector& (Charge::*)() const>
+			(&Charge::position), return_value_policy<copy_const_reference>() )
+		.def("change_coordinate_frame",
+			PyVectorHelper::get(&Vector::change_coordinate_frame))
+		;
     
     class_<QuadPoint>("QuadPoint", init<const QuadPoint&>())
-        .def("pt", &QuadPoint::__py_pt, return_value_policy<copy_const_reference>())
-        .def("normal", &QuadPoint::__py_normal, return_value_policy<copy_const_reference>())
-        .def("weight", &QuadPoint::__py_weight, return_value_policy<copy_const_reference>())
-        .def("__str__", &QuadPoint::str);
+		.def("pt", static_cast<const __Vector<float>& (QuadPoint::*)() const>
+			(&QuadPointT<float>::pt),
+			return_value_policy<copy_const_reference>() )
+		.def("normal", static_cast<const __Vector<float>& (QuadPoint::*)() const>
+			(&QuadPointT<float>::normal),
+			return_value_policy<copy_const_reference>() )
+		.def("weight", static_cast<const float& (QuadPoint::*)() const>
+			(&QuadPointT<float>::weight),
+			return_value_policy<copy_const_reference>() )
+        //.def("pt", &QuadPoint::__py_pt, return_value_policy<copy_const_reference>())
+        //.def("normal", &QuadPoint::__py_normal, return_value_policy<copy_const_reference>())
+        //.def("weight", &QuadPoint::__py_weight, return_value_policy<copy_const_reference>())
+        .def("__str__", &QuadPoint::str)
+		;
 
     class_<BasicNodePatch>("NodePatch", init<const BasicNodePatch&>())
-        .def("vector", &BasicNodePatch::py_vector, return_value_policy<copy_non_const_reference>())
+        //.def("vector", &BasicNodePatch::py_vector, return_value_policy<copy_non_const_reference>())
+		.def("vector", &PyBasicNodePatchHelper::__py_vector,
+			return_value_policy<copy_non_const_reference>())
         .def("node", &BasicNodePatch::get_node, return_value_policy<copy_const_reference>())
         .def("centroid", &BasicNodePatch::get_centroid, return_value_policy<copy_const_reference>())
         .def("normal", &BasicNodePatch::get_normal, return_value_policy<copy_const_reference>())
@@ -226,7 +298,7 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def(init<const std::string&>())
         .def(init<const Mesh&>())
         .def(init<>())
-        .def("init", &Mesh::init)
+        //.def("init", &Mesh::init)
         .def("get_triangle", &Mesh::get_triangle, return_value_policy<reference_existing_object>())
         .def("get_node_patch", &Mesh::get_node_patch, return_value_policy<reference_existing_object>())
         .def("get_charge", &Mesh::get_charge, return_value_policy<reference_existing_object>())
@@ -239,12 +311,15 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def_readonly("num_charges", &Mesh::get_num_charges) 
         .def("get_centre", &Mesh::get_centre, return_value_policy<copy_const_reference>())
         .def("set_centre", &Mesh::set_centre)
-        .def("init_energy_precalcs", &Mesh::init_energy_precalcs)
+        //.def("init_energy_precalcs", &Mesh::init_energy_precalcs)
         .def("get_radius", &Mesh::get_radius)
         .def("calculate_volume", &Mesh::calculate_volume, "Calculate the volume enclosed by the mesh.")
         .def("kinemage_fh_vals", &Mesh::kinemage_fh_vals)
-        .def("calculate_forces", &Mesh::py_calculate_forces)
-        .def("calculate_energy", &Mesh::py_calculate_energy)
+        .def("calculate_forces", &Mesh::calculate_forces)
+        //.def("calculate_energy", &Mesh::py_calculate_energy)
+        .def("calculate_energy", 
+			static_cast<double (Mesh::*)(double, double, double) const>
+				(&Mesh::calculate_energy))
         .def("kinemage_node_patches", &Mesh::kinemage_node_patches)
         .def("set_quad_points_per_triangle", &Mesh::set_quad_points_per_triangle)
         .def("set_qual_points_per_triangle", &Mesh::set_qual_points_per_triangle);
@@ -273,14 +348,22 @@ BOOST_PYTHON_MODULE(libBEEP)
         
     class_<BEEP>("_BEEP", init<double, double, int, int, int, bool>())
         .def(init<const std::string&, bool, bool>())
-        .def("load_library_mesh", &BEEP::py_load_library_mesh, return_value_policy<copy_non_const_reference>())
-        .def("clear_mesh_instances", &BEEP::py_clear_mesh_instances)
-        .def("insert_mesh_instance", &BEEP::py_insert_mesh_instance, return_value_policy<copy_non_const_reference>())
-        .def("py_kinemage" , &BEEP::py_kinemage)
+        .def("load_library_mesh", &BEEP::load_library_mesh, return_value_policy<copy_non_const_reference>())
+#ifndef __DELETED__
+		.def("get_library_mesh", &BEEP::get_library_mesh, 
+			return_value_policy<copy_non_const_reference>())
+		.def("move_mesh_instance", &BEEP::move_mesh_instance,
+			return_value_policy<copy_non_const_reference>())
+#endif // ! __DELETED__
+        .def("clear_mesh_instances", &BEEP::clear_mesh_instances)
+        .def("insert_mesh_instance", &BEEP::insert_mesh_instance,
+			return_value_policy<copy_non_const_reference>())
+        .def("create_kinemage" , &BEEP::create_kinemage)
         .def("solve", &BEEP::solve)
         .def("benchmark", &BEEP::benchmark)
         .def("calculate_energies", &BEEP::calculate_energies)
         .def("calculate_forces", &BEEP::calculate_forces)
+        .def("reset_fh_vals", &BEEP::reset_fh_vals)
         .def("reset_library_fh_vals", &BEEP::reset_library_fh_vals)
         .def("write_fh", &BEEP::write_fh)
         .def_readonly("num_node_patches", &BEEP::get_total_patches)
@@ -291,10 +374,10 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def("get_mesh_instance", &BEEP::get_mesh_instance, return_value_policy<copy_non_const_reference>())
         .def("set_bounding_cube", &BEEP::set_bounding_cube)
         .def("get_potential_at_point", &BEEP::get_potential_at_point)
-        .def("write_opendx_pts_xyz", &BEEP::write_opendx_xyz)
+        .def("write_opendx_xyz", &BEEP::write_opendx_xyz)
         .def("write_opendx", &BEEP::write_opendx)
         .def("write_matrix", &BEEP::write_matrix)
-        .def("skip_precalcs", &BEEP::hack_skip_precalcs)
+        .def("skip_precalcs", &BEEP::skip_precalcs)
         .def("set_quad_points_per_triangle", &BEEP::set_quad_points_per_triangle)
         .def("set_qual_points_per_triangle", &BEEP::set_qual_points_per_triangle);
         

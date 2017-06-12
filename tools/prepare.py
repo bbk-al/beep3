@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 from pybeep import *
@@ -34,7 +34,7 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
             mtz.add(pqr_filename, basename(pqr_filename))
             mtz.add(xyzqr_filename, basename(xyzqr_filename))
         else:
-            print "Expected either a .xyzqr or .pqr file as input"
+            print("Expected either a .xyzqr or .pqr file as input")
             raise BaseException
         
         mtz.add(mesh_filename, basename(mesh_filename))
@@ -52,7 +52,7 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
         
         if (centre_filename == ""):
             centre_filename = "%s.centre" %(stem_filename)
-            print >>open(centre_filename,'w'), mesh.get_centre()
+            print(mesh.get_centre(), file=open(centre_filename,'w'))
         mtz.add(centre_filename, basename(centre_filename))
         
         # create xml file
@@ -78,7 +78,7 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
         # Print our newly created XML
         xml_filename = os.path.join(temp_dir, "definition.xml")
         definition_xml = open(xml_filename,'w')
-        print >>definition_xml, doc.toxml()
+        print(doc.toxml(), file=definition_xml)
         definition_xml.close();
         
         # add definition.xml to the .mtz tarfile
@@ -92,9 +92,9 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
             np.h = 1.0
             energy_f += - np.f*np.energy_coefficient_f;
             energy_h += np.h*epsilon_ratio*np.energy_coefficient_h 
-        print "energy_f: ", energy_f
-        print "energy_h: ", energy_h
-        print "total energy: ", energy_f+energy_h
+        print("energy_f: ", energy_f)
+        print("energy_h: ", energy_h)
+        print("total energy: ", energy_f+energy_h)
         
     finally:
         
@@ -107,4 +107,3 @@ if __name__=="__main__":
     if (len(sys.argv) >= 5): centre_filename = sys.argv[3]
     else: centre_filename = ""
     precalculate_mesh(sys.argv[-1], sys.argv[1], sys.argv[2], centre_filename)
-    

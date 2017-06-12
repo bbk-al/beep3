@@ -203,7 +203,8 @@ public:
         //std::cout << dynamic_cast<const Vector&>(*thing) << centre << " " << edge_length << " " << delta << "\n";
 
         // check the the thing belongs in this node
-        //std::cout << Vector(*thing) << " " << centre << " " << delta << std::endl;
+        // std::cout << Vector(*thing) << " " << centre << " " << delta
+		// 		  << " " << edge_length << std::endl;
         delta.x = fabs(delta.x);
         delta.y = fabs(delta.y);
         delta.z = fabs(delta.z);

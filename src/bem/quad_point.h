@@ -192,9 +192,9 @@ public:
     inline const PrecisionType& weight() const { return flat_data[6]; }
 
     // python accessors (doesn't like overloading, tsk).
-    inline const VecStructType& __py_pt() const { return *reinterpret_cast<const VecStructType*>(&(flat_data[0])); }
-    inline const VecStructType& __py_normal() const { return *reinterpret_cast<const VecStructType*>(&(flat_data[3])); }
-    inline const PrecisionType& __py_weight() const { return flat_data[6]; }
+    //inline const VecStructType& __py_pt() const { return *reinterpret_cast<const VecStructType*>(&(flat_data[0])); }
+    //inline const VecStructType& __py_normal() const { return *reinterpret_cast<const VecStructType*>(&(flat_data[3])); }
+    //inline const PrecisionType& __py_weight() const { return flat_data[6]; }
 
     std::string str() const
     {

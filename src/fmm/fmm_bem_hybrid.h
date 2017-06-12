@@ -27,6 +27,8 @@
 
 #include "interaction_list.h"
 
+#define __DELETED__
+
 namespace fmm
 {
 
@@ -147,7 +149,7 @@ public:
 
     inline const TimeInfo& get_timing_info() const { return timing_info; }
     inline TimeInfo& get_timing_info() { return timing_info; }
-#ifdef __DELETED__
+#ifdef __DELETED2__
     inline void zero_timing_info() const { 
 #else
     inline void zero_timing_info() { 
@@ -380,7 +382,7 @@ void FMM_BEM_Octree<NTERMS, NLAMBS, NWAVES,NodePatchT>::translate_multipole_upwa
             if (node.empty()) { continue; }
 
             // get parent node
-#ifdef __DELETED__
+#ifdef __DELETED2__
             NodeT& parent_node = get_node(node.get_idx().get_parent_idx());
 #else
             NodeT& parent_node = super::get_node(node.get_idx().get_parent_idx());

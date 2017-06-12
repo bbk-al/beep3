@@ -1,9 +1,9 @@
-/*
-* bem_solver.cpp
-*
-*  Created on: 23 Jul 2010
-*      Author: david
-*/
+/* Author: david fallaize   Created on: 23 Jul 2010 */
+
+/*!\file beep.cpp
+ * \brief This module implements the BEEP class for boundary element
+ *	electrostatic potential calculations.
+ */
 #include "beep.h"
 #include "../bem/mesh.h"
 #include <cassert>
@@ -28,19 +28,20 @@ BEEP::BEEP(const ConfigFile& config,
            int _cmdline_bem_nbsize,
            double _cmdline_kappa,
            bool planar) : 
-      manually_set_bounding_cube(false), 
-      beta0 (1e-10), 
-      cmdline_bem_nbsize(_cmdline_bem_nbsize), 
-      cmdline_quad_points_per_triangle(cmdline_quad_points),
-      cmdline_qual_points_per_triangle(cmdline_qual_points), 
-      cmdline_kappa(_cmdline_kappa),
-      force_planar(planar),
-      skip_precalcs(false)
+	manually_set_bounding_cube(false), 
+	beta0 (1e-10), 
+	cmdline_bem_nbsize(_cmdline_bem_nbsize), 
+	cmdline_quad_points_per_triangle(cmdline_quad_points),
+	cmdline_qual_points_per_triangle(cmdline_qual_points), 
+	cmdline_kappa(_cmdline_kappa),
+	force_planar(planar),
+	skipping_precalcs(false)
 {
     init(config);
 }
 
 // This constructor is for python post-processing scripts
+//NB Automatically calculates energies and forces, so single scenario
 BEEP::BEEP(const std::string& config_filename, bool planar, bool read_fh) : 
     manually_set_bounding_cube(false), 
     beta0 (1e-10), 
@@ -49,16 +50,15 @@ BEEP::BEEP(const std::string& config_filename, bool planar, bool read_fh) :
     cmdline_qual_points_per_triangle(-1), 
     cmdline_kappa(-1),
     force_planar(planar),
-    skip_precalcs(false)
+    skipping_precalcs(false)
 {
     // parse xml config
     ConfigFile config(config_filename);
     
-    // this will load the meshes and instantiate them as 
-    // objects in space
+    // load the meshes and instantiate them as objects in space
     init(config);
     
-    // this will read in fh files from results files and do post-processy stuff
+    // read in fh files from results files and do post-processy stuff
     // (assuming read_fh == true)
     if (read_fh)
     {
@@ -68,56 +68,67 @@ BEEP::BEEP(const std::string& config_filename, bool planar, bool read_fh) :
         f_lhs = boost::shared_array<double>(new double[num_patches]);
         h_lhs = boost::shared_array<double>(new double[num_patches]);
         
-        for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+        for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator
+				mit=meshes.cbegin(), mend=meshes.cend();
+			 mit != mend; ++mit)
         {
             MeshInstance& minst = **mit;
             
             // silent meshes don't write their fh values
-            if (minst.isSilent()) { continue; }
+            if (minst.isSilent()) continue;
             
             std::stringstream name_buf;
-            name_buf << fh_filename << "." << minst.instance_id;
+            name_buf << fh_filename << "." << minst.get_id();
             std::cout << "Reading from: " << name_buf.str() << std::endl;
             
             std::ifstream fh_input;
             fh_input.open(name_buf.str().c_str(), std::ios_base::in);    
             
-            for (PatchList::iterator nit=minst.patches.begin(), nend=minst.patches.end(); nit != nend; ++nit)
+            for (PatchList::iterator
+					nit = minst.get_node_patches().begin(),
+					nend = minst.get_node_patches().end();
+				 nit != nend; ++nit)
             {
                 size_t patch_idx = (**nit).get_idx();
                 fh_input >> f_lhs[patch_idx] >> h_lhs[patch_idx];
-                fh_input.ignore( std::numeric_limits<std::streamsize>::max(), '\n' );
+                fh_input.ignore(std::numeric_limits<std::streamsize>::max(),
+				                '\n' );
             }
             
             fh_input.close();
         }
         
+std::cout << "BEEP::BEEP read_fh calculate energies !!" << std::endl;
         calculate_energies();
         calculate_forces();
-        
     }
-    
 }
 
-void BEEP::init(const ConfigFile& config) 
-{
-
-    for (ConfigFile::MeshLibrary::const_iterator it=config.mesh_library.begin(), end=config.mesh_library.end(); it != end; ++it)
+void BEEP::init(const ConfigFile& config) {
+    for (ConfigFile::MeshLibrary::const_iterator
+			it=config.mesh_library.cbegin(), end=config.mesh_library.cend();
+		 it != end; ++it)
     {
         const std::string& mesh_fname = it->mesh_filename;
         unsigned int mesh_id = it->mesh_id;
 
-        // we assume that meshes are inserted into the mesh library in numerical order
-        // as they appear in the config file
+        // Enforce that meshes are inserted into the mesh library in the
+        // same order as they appear in the config file
+        //NB assume this is just a way of enforcing config consistency
+#ifdef __DELETED__
         assert(mesh_id == mesh_library.size());
+#else
+        assert(mesh_id == meshes.librarySize());
+#endif  // __DELETED__
 
         // add mesh to library
+#ifdef __DELETED__
         boost::shared_ptr<Mesh> mesh_ptr(new Mesh());
         mesh_library.push_back( mesh_ptr );
         mesh_ptr->init(mesh_fname, force_planar);
-
-        //std::cout << "Mesh centre @ " << mesh_ptr->get_centre() << std::endl;
-
+#else
+        meshes.addMesh(mesh_fname, force_planar);
+#endif // __DELETED__
    }
 
     // Get these from the config.xml (can be overridden by command-line parms)
@@ -125,7 +136,9 @@ void BEEP::init(const ConfigFile& config)
     kappa = (cmdline_kappa == -1) ? config.solvent_kappa : cmdline_kappa;
     
     // loop over the mesh instances in the config layout
-    for (ConfigFile::Layout::const_iterator it=config.layout.begin(), end=config.layout.end(); it != end; ++it)
+    for (ConfigFile::Layout::const_iterator
+			it=config.layout.cbegin(), end=config.layout.cend();
+		 it != end; ++it)
     {
         // extract the mesh id
         unsigned int mesh_lib_id = it->mesh_id;
@@ -137,47 +150,67 @@ void BEEP::init(const ConfigFile& config)
 
         unsigned int quad_points_per_triangle=DEFAULT_QUADS;
         if (cmdline_quad_points_per_triangle != -1) {
-            quad_points_per_triangle = static_cast<unsigned int>(cmdline_quad_points_per_triangle);
+            quad_points_per_triangle =
+				static_cast<unsigned int>(cmdline_quad_points_per_triangle);
         }
         else if (it->quad_points != -1) {
-            quad_points_per_triangle = static_cast<unsigned int>(it->quad_points);
+            quad_points_per_triangle =
+				static_cast<unsigned int>(it->quad_points);
         }
 
         unsigned int qual_points_per_triangle=DEFAULT_QUALS;
         if (cmdline_qual_points_per_triangle != -1) {
-            qual_points_per_triangle = static_cast<unsigned int>(cmdline_qual_points_per_triangle);
+            qual_points_per_triangle =
+				static_cast<unsigned int>(cmdline_qual_points_per_triangle);
         }
         else if (it->qual_points != -1) {
-            qual_points_per_triangle = static_cast<unsigned int>(it->qual_points);
+            qual_points_per_triangle =
+		 		static_cast<unsigned int>(it->qual_points);
         }
         
-        std::cout << "Mesh (lib_id=" << mesh_lib_id << ") @ " << offset << " rot=" << rotation.str() << " quads=" << quad_points_per_triangle << " quals=" << qual_points_per_triangle << std::endl;
+        std::cout << "Mesh (lib_id=" << mesh_lib_id << ") @ " << offset
+			<< " rot=" << rotation.str() << " quads="
+			<< quad_points_per_triangle << " quals="
+			<< qual_points_per_triangle << std::endl;
 
+#ifdef __DELETED__
         boost::shared_ptr<MeshInstance> mesh_instance_ptr( new MeshInstance(mesh_lib_id, mesh_instance_id, mesh_library, offset, rotation, it->dielectric, Dsolvent, quad_points_per_triangle, qual_points_per_triangle) );
         meshes.push_back( mesh_instance_ptr );
+#else // __DELETED__
+		meshes.add(mesh_lib_id, mesh_instance_id, 
+			       offset, rotation, it->dielectric, Dsolvent,
+			       quad_points_per_triangle, qual_points_per_triangle);
+#endif // __DELETED__
     }
 
     assert(meshes.size() > 0);
 
     // set unique id on each node patch
     unsigned int uid_ctr=0;
-    for (MeshInstanceList::iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (MeshInstanceList::iterator mit=meshes.begin(), mend=meshes.end();
+		 mit != mend; ++mit)
     {
         MeshInstance& minst = **mit;
-        for (PatchList::iterator nit=minst.patches.begin(), nend=minst.patches.end(); nit != nend; ++nit)
+        for (PatchList::iterator
+				nit = minst.get_node_patches().begin(),
+				nend = minst.get_node_patches().end();
+			 nit != nend; ++nit)
         {
             (**nit).set_idx(uid_ctr++);
         }
     }
-
 }
 
-Mesh& BEEP::py_load_library_mesh(const std::string& mtz_filename)
-{
+Mesh& BEEP::load_library_mesh(const std::string& mtz_filename) {
     // add mesh to library
+#ifdef __DELETED__
     boost::shared_ptr<Mesh> mesh_ptr(new Mesh());
     mesh_library.push_back( mesh_ptr );
     mesh_ptr->init(mtz_filename, force_planar);
+#else
+    boost::shared_ptr<ListedMesh> mesh_ptr
+		= meshes.addMesh(mtz_filename, force_planar);
+#endif
     
     unsigned int num_quad_points = (cmdline_quad_points_per_triangle != -1) ? static_cast<unsigned int>(cmdline_quad_points_per_triangle) : DEFAULT_QUADS;
     unsigned int num_qual_points = (cmdline_qual_points_per_triangle != -1) ? static_cast<unsigned int>(cmdline_qual_points_per_triangle) : DEFAULT_QUALS;
@@ -188,78 +221,92 @@ Mesh& BEEP::py_load_library_mesh(const std::string& mtz_filename)
     return *mesh_ptr;
 }
 
-void BEEP::py_clear_mesh_instances()
-{
-    meshes.clear();
+void BEEP::clear_mesh_instances(unsigned int start, int end) {
+	// This allows python-like end-point specification
+	if (end < 0) end = meshes.size() + 1 + end;
+	if (end < start) end = start;  // no-op
+    meshes.erase(meshes.begin()+start, meshes.begin()+end);
 }
 
-MeshInstance& BEEP::py_insert_mesh_instance(unsigned int mesh_lib_id, const Vector& offset, const Quaternion& rotation, const double protein_dielectric)
+MeshInstance& BEEP::insert_mesh_instance(
+	unsigned int mesh_lib_id,
+	const Vector& offset, const Quaternion& rotation,
+	const double protein_dielectric)
 {
     // check that the mesh_lib_id is valid
-    if (mesh_lib_id >= mesh_library.size())
-    {
-        std::cerr << "Bad value for mesh_lib_id: " << mesh_lib_id << " (" << mesh_library.size() << " meshes defined)" << std::endl;
+#ifdef __DELETED__
+    if (mesh_lib_id >= mesh_library.size()) {
+        std::cerr << "Bad value for mesh_lib_id: " << mesh_lib_id
+			<< " (" << mesh_library.size() << " meshes defined)" << std::endl;
         throw std::exception();
     }
+#else // __DELETED__
+    if (mesh_lib_id >= meshes.librarySize()) {
+        std::cerr << "Bad value for mesh_lib_id: " << mesh_lib_id
+			<< " (" << meshes.librarySize() << " meshes defined)" << std::endl;
+        throw std::exception();
+    }
+#endif // ! __DELETED__
 
     // load mesh instance
-    unsigned int num_quad_points = (cmdline_quad_points_per_triangle != -1) ? static_cast<unsigned int>(cmdline_quad_points_per_triangle) : DEFAULT_QUADS;
-    unsigned int num_qual_points = (cmdline_qual_points_per_triangle != -1) ? static_cast<unsigned int>(cmdline_qual_points_per_triangle) : DEFAULT_QUALS;
-    boost::shared_ptr<MeshInstance> mesh_instance_ptr( new MeshInstance(mesh_lib_id, meshes.size(), mesh_library, offset, rotation, protein_dielectric, Dsolvent, num_quad_points, num_qual_points) );
-    
-//     // minimum separation 5A between node patches
-//     const double minimum_separation = 5.;
-//     
-//     // loop over the node patch points and ensure that they are not within an angstrom
-//     // of any other node patch already in the system
-//     for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator minst_it = meshes.begin(), minst_end=meshes.end(); minst_it != minst_end; ++minst_it)
-//     {
-//         const MeshInstance& minst = **minst_it;
-//         bool further_check_required = false;
-//         if ((minst.xyz_offset - mesh_instance_ptr->xyz_offset).length() < (mesh_instance_ptr->radius + minst.radius + minimum_separation)) {
-//             further_check_required = true;
-//         }
-// 
-//         if (further_check_required)
-//         {
-// 
-//             throw std::exception();
-//             
-// /*            for (PatchList::const_iterator
-//                 
-//                 
-//             for (PatchList::const_iterator np_it = minst.patches.begin(), np_end=minst.patches.end(); np_it != np_end; np_it != np_end)
-//             {
-//                 const BasicNodePatch& np = **np_it;
-//                 np
-//             }*/
-//             
-//         }
-//         
-//     }
-    
+    unsigned int num_quad_points = (cmdline_quad_points_per_triangle != -1)
+		? static_cast<unsigned int>(cmdline_quad_points_per_triangle)
+		: DEFAULT_QUADS;
+    unsigned int num_qual_points = (cmdline_qual_points_per_triangle != -1)
+		? static_cast<unsigned int>(cmdline_qual_points_per_triangle)
+		: DEFAULT_QUALS;
+
+#ifdef __DELETED__
+    boost::shared_ptr<MeshInstance> mesh_instance_ptr( new                      MeshInstance(mesh_lib_id, meshes.size(), mesh_library, offset, rotation,        protein_dielectric, Dsolvent, num_quad_points, num_qual_points) );
     // set unique id on each node patch
     unsigned int patch_ctr = get_total_patches();
-    for (PatchList::iterator nit=mesh_instance_ptr->patches.begin(), nend=mesh_instance_ptr->patches.end(); nit != nend; ++nit)
+    for (PatchList::iterator nit=mesh_instance_ptr->patches.begin(),            nend=mesh_instance_ptr->patches.end(); nit != nend; ++nit)
     {
         (**nit).set_idx(patch_ctr++);
     }
-    
     // add to std::vector of mesh instance pointers
     meshes.push_back( mesh_instance_ptr );
-
     return *mesh_instance_ptr;
-    
+#else // __DELETED__
+	return *meshes.add(mesh_lib_id, meshes.size(), 
+		               offset, rotation, protein_dielectric, Dsolvent,
+		               num_quad_points, num_qual_points);
+#endif // __DELETED__
 }
 
-void BEEP::py_kinemage(const std::string& filename, double fscale, double hscale, int num_colours, const std::string& preamble) const
+#ifndef __DELETED__
+MeshInstance& BEEP::move_mesh_instance(
+	unsigned int id,
+	const Vector& translate, const Quaternion& rotate,
+	const double protein_dielectric)
+{
+#if 0
+    // check that the mesh id is valid
+    if (id >= meshes.size()) {
+        std::cerr << "Bad value for mesh instance_id: " << id
+			<< " (" << meshes.size() << " mesh instances defined)" << std::endl;
+        throw std::exception();
+    }
+	return meshes[id]->move(translate, rotate);
+#else  // if 0
+	return *meshes.move(id, translate, rotate, protein_dielectric, Dsolvent);
+#endif // if 0
+}
+#endif // ! __DELETED__
+
+void BEEP::create_kinemage(
+	const std::string& filename,
+	double fscale, double hscale, int num_colours,
+	const std::string& preamble) const
 {
     // set unique id on each node patch
     std::ostringstream buf_f;
     std::ostringstream buf_h;
     buf_f << "@trianglelist {fvals} off\n";
     buf_h << "@trianglelist {hvals} \n";
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (MeshInstanceList::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         const MeshInstance& minst = **mit;
         if (minst.isSilent() == false) { 
@@ -269,7 +316,9 @@ void BEEP::py_kinemage(const std::string& filename, double fscale, double hscale
     buf_f << "\n@trianglelist {silent-fvals} off\n";
     buf_h << "\n@trianglelist {silent-hvals} \n";
 
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (MeshInstanceList::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         const MeshInstance& minst = **mit;
         if (minst.isSilent() == true) { 
@@ -279,13 +328,19 @@ void BEEP::py_kinemage(const std::string& filename, double fscale, double hscale
     
     std::ostringstream charge_buf;
     charge_buf << "@spherelist {charges}\n";
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (MeshInstanceList::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         const MeshInstance& minst = **mit;
-        for (std::vector< boost::shared_ptr<Charge> >::const_iterator it = minst.charges.begin(), end=minst.charges.end(); it != end; ++it)
+        for (std::vector< boost::shared_ptr<Charge> >::const_iterator
+				it = minst.get_charges().cbegin(),
+				end = minst.get_charges().cend();
+			 it != end; ++it)
         {
             const Charge& ch = **it;
-            charge_buf << "r=" << ch.radius << " {} " << ch.x << " " << ch.y << " " << ch.z << "\n";
+            charge_buf << "r=" << ch.get_radius() << " {} "
+			           << ch.x << " " << ch.y << " " << ch.z << "\n";
         }
     }    
     
@@ -306,8 +361,7 @@ void BEEP::py_kinemage(const std::string& filename, double fscale, double hscale
 //     
 // }
 
-std::string BEEP::benchmark()
-{
+std::string BEEP::benchmark() {
     
     //std::cout << "sizeof a node patch and QP is: " << sizeof(NodePatch) << " " << sizeof(QuadPoint) << std::endl;
 
@@ -324,7 +378,8 @@ std::string BEEP::benchmark()
     // init FMM octree
     calculate_bounding_cube();
     long init_fmm_time = init_fmm_octree();
-    std::cout << "Init FMM tree took: "<< init_fmm_time / 1000. << " ms" << std::endl;
+    std::cout << "Init FMM tree took: "<< init_fmm_time / 1000. << " ms"
+	          << std::endl;
     std::cout << "total num patches = " << num_patches << std::endl;
     
     long time_start = myclock();
@@ -345,14 +400,13 @@ std::string BEEP::benchmark()
     fmm.reset();
     
     std::stringstream buf;
-    buf << num_patches << "," << num_patches*num_patches << "," << bem_time / 1000.;
+    buf << num_patches << "," << num_patches*num_patches << ","
+	    << bem_time / 1000.;
     
     return buf.str();
-   
 }
 
-RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations)
-{
+RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations) {
     vanilla_fmm_timer.zero();
     bem_fmm_timer.zero();
     
@@ -363,7 +417,7 @@ RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations)
 
     std::cout << "total num patches = " << num_patches << std::endl;
     
-    // init memory
+    // allocate memory - initialised in set_rhs
     f_rhs = boost::shared_array<double>(new double[num_patches]);
     h_rhs = boost::shared_array<double>(new double[num_patches]);
     f_lhs = boost::shared_array<double>(new double[num_patches]);
@@ -378,12 +432,12 @@ RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations)
     calculate_bounding_cube();
 
     // set the RHS vector
-    long time_rhs = set_rhs();
+    long time_rhs = set_rhs();   // updates rhs_octree attribute
     stats.rhs_fmm = rhs_octree->get_timing_info();
     rhs_octree.reset();
         
     // init FMM octree  
-    long time_init_fmm = init_fmm_octree();
+    long time_init_fmm = init_fmm_octree();  // updates fmm attribute
 
     // pre-calc the local interactions
     size_t num_explicit_integrations = count_explicit_integrations();
@@ -395,10 +449,15 @@ RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations)
     time_gmres = myclock() - time_gmres;
 
     // set the f/h values within the node patches to their new converged values
-    for (std::vector< boost::shared_ptr<MeshInstance> >::iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (std::vector< boost::shared_ptr<MeshInstance> >::iterator
+			mit=meshes.begin(), mend=meshes.end();
+		 mit != mend; ++mit)
     {
         MeshInstance& minst = **mit;
-        for (PatchList::iterator nit=minst.patches.begin(), nend=minst.patches.end(); nit != nend; ++nit)
+        for (PatchList::iterator
+				nit = minst.get_node_patches().begin(),
+				nend = minst.get_node_patches().end();
+			 nit != nend; ++nit)
         {
             BasicNodePatch& np = **nit;
             unsigned int patch_idx = np.get_idx();
@@ -442,7 +501,8 @@ RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations)
     stats.time_precalcs = time_precalcs;
     stats.num_explicits = num_explicit_integrations;
     stats.num_patches = num_patches;
-    stats.neighbourhood_size = (cmdline_bem_nbsize == -1) ? DEFAULT_BEM_NEIGHBOURHOOD_SIZE : cmdline_bem_nbsize;
+    stats.neighbourhood_size = (cmdline_bem_nbsize == -1)
+		? DEFAULT_BEM_NEIGHBOURHOOD_SIZE : cmdline_bem_nbsize;
     
     // free the memory associated with the FMM
     fmm.reset();
@@ -450,79 +510,95 @@ RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations)
     return stats;
 }
 
-void BEEP::reset_library_fh_vals()
-{
+void BEEP::reset_fh_vals() {
     // resets the f/h node patch values of the mesh definitions
+#if 1
+//TODO NB this probably isn't right - set 0 on initialisation only?
+	if (f_lhs.get() == nullptr) return;
+	unsigned int num_patches = get_total_patches();
+    for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
+        f_lhs[ctr] = 0.0;
+        h_lhs[ctr] = 0.0;
+    }
+#endif // if 0
+}
+
+void BEEP::reset_library_fh_vals() {
+#ifdef __DELETED__
     unsigned int total_ctr=0;
-    for (std::vector< boost::shared_ptr<MeshInstance> >::iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (std::vector< boost::shared_ptr<MeshInstance> >::iterator mit=meshes.   begin(), mend=meshes.end(); mit != mend; ++mit)
     {
         MeshInstance& minst = **mit;
-        Mesh& mesh = *(mesh_library[minst.lib_id]);
+        Mesh& mesh = *minst.mesh_ptr;  // *(mesh_library[minst.lib_id]);
         std::vector<BasicNodePatch>& lib_node_patches = mesh.get_node_patches();
         for (unsigned int ctr=0; ctr < lib_node_patches.size(); ++ctr)
         {
             BasicNodePatch& np = lib_node_patches[ctr];
             np.f = f_lhs[total_ctr];
-            np.h = h_lhs[total_ctr]; 
+            np.h = h_lhs[total_ctr];
             ++total_ctr;
         }
     }
- 
+#else // __DELETED__
+    meshes.reset_library_fh_vals(f_lhs, h_lhs);
+#endif // __DELETED__
 }
 
-void BEEP::write_fh(const std::string& output_filename)
-{
+void BEEP::write_fh(const std::string& output_filename) {
     if (output_filename == "") { return; }
 
     std::ofstream fh_output;
     
-    for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         MeshInstance& minst = **mit;
         
         // silent meshes don't write their fh values
-        if (minst.isSilent()) { continue; }
+        if (minst.isSilent()) continue;
         
         std::stringstream name_buf;
-        name_buf << output_filename << "." << minst.instance_id;
+        name_buf << output_filename << "." << minst.get_id();
         std::cout << "Writing to: " << name_buf.str() << std::endl;
         fh_output.open(name_buf.str().c_str(), std::ios_base::out);
         
         fh_output << std::setprecision(12);
-        for (PatchList::iterator nit=minst.patches.begin(), nend=minst.patches.end(); nit != nend; ++nit)
+        for (PatchList::iterator
+				nit = minst.get_node_patches().begin(),
+				nend = minst.get_node_patches().end();
+			 nit != nend; ++nit)
         {
             size_t patch_idx = (**nit).get_idx();
             fh_output << f_lhs[patch_idx] << " " << h_lhs[patch_idx] << "\n";
-            
         }
         
         fh_output.close();
     }
-    return;
 }
 
-double BEEP::calculate_energies()
-{
+double BEEP::calculate_energies() {
     double total_E = 0.0;
 
     unsigned int offset=0;
-    for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         const MeshInstance& m = **mit;
-        if (m.isSilent()) { continue; }
+        if (m.isSilent()) continue;
         total_E += m.calculate_energy(kappa, &f_lhs[offset], &h_lhs[offset]);
         offset += m.get_num_node_patches();
     }
-
     return total_E;
-
 }
 
-void BEEP::calculate_forces()
-{
+void BEEP::calculate_forces() {
     unsigned int offset=0;
     std::cout << std::setprecision(6);
-    for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         const MeshInstance& m = **mit;
         
@@ -534,40 +610,42 @@ void BEEP::calculate_forces()
         KahanVector MST_internal;
         KahanVector ionic;
         KahanVector dbf;
-        m.calculate_forces(kappa, &f_lhs[offset], &h_lhs[offset], qE, MST_external, MST_internal, dbf, ionic);
+        m.calculate_forces(kappa, &f_lhs[offset], &h_lhs[offset], qE,
+		                   MST_external, MST_internal, dbf, ionic);
         
-        std::cout << "Forces for mesh_id=" << m.instance_id << "\n";
-        std::cout << " qE (patch-charge): " << (*qE).length() << " " << *qE << "\n";
-        std::cout << " qE (MST internal): " << (*MST_internal).length() << " " << *MST_internal <<"\n";
-        std::cout << " dbf (delta_MST): " << (*dbf).length() << " " << *dbf <<"\n";
+        std::cout << "Forces for mesh_id=" << m.get_id() << "\n";
+        std::cout << " qE (patch-charge): " << (*qE).length() << " " << *qE 
+		          << "\n";
+        std::cout << " qE (MST internal): " << (*MST_internal).length()
+		          << " " << *MST_internal <<"\n";
+        std::cout << " dbf (delta_MST): " << (*dbf).length() << " " << *dbf 
+				  << "\n";
         std::cout << " ionic: " << (*ionic).length() << " " << *ionic <<"\n";
         
         KahanVector total_patch = qE + dbf + ionic;
         KahanVector total_mst_int = MST_internal + dbf + ionic;
         KahanVector total_mst_ext = MST_external + ionic;
         std::cout << "Total forces (take your pick...)\n";
-        std::cout << "total (patch-charge + dbf + ionic): " << (*total_patch).length() << " " << *total_patch << "\n";
-        std::cout << "total (MST internal + dbf + ionic): " << (*total_mst_int).length() << " " << *total_mst_int << "\n";
-        std::cout << "total (MST external + ionic): " << (*total_mst_ext).length() << " " << *total_mst_ext <<"\n";
+        std::cout << "total (patch-charge + dbf + ionic): "
+		          << (*total_patch).length() << " " << *total_patch << "\n";
+        std::cout << "total (MST internal + dbf + ionic): "
+		          << (*total_mst_int).length() << " " << *total_mst_int << "\n";
+        std::cout << "total (MST external + ionic): "
+		          << (*total_mst_ext).length() << " " << *total_mst_ext <<"\n";
         //std::cout << "magnitude: " << *total_force.length() << "\n";
         
         //std::cout << "Force on mesh_id=" << m.instance_id << " (lib_id=" << m.lib_id << "): " << std::setprecision(10) << total_force << std::endl;
         offset += m.get_num_node_patches();
     }
     std::cout << std::flush;
-
-    return;
-
 }
 
-void BEEP::write_matrix() const
-{
+void BEEP::write_matrix() const {
     unsigned int num_patches = get_total_patches();
     
     // precalc quad points
     std::vector< boost::shared_ptr<QuadList> > cache;
-    for (unsigned int ii=0; ii < num_patches; ++ii)
-    {
+    for (unsigned int ii=0; ii < num_patches; ++ii) {
         const BasicNodePatch& patch = get_patch(ii);
         patch.obtain_shared_quad_ptrs(cache);
     }
@@ -578,24 +656,21 @@ void BEEP::write_matrix() const
     fC.open("C.matrix", std::ios_base::out);
     fD.open("D.matrix", std::ios_base::out);
     
-    std::cout << "Writing full BEM matrix... (" << num_patches*num_patches*4 << " elements)" << std::endl;
+    std::cout << "Writing full BEM matrix... ("
+	          << num_patches*num_patches*4 << " elements)" << std::endl;
     
-    for (unsigned int ii=0; ii < num_patches; ++ii)
-    {
+    for (unsigned int ii=0; ii < num_patches; ++ii) {
         const BasicNodePatch& src_patch = get_patch(ii);
-        for (unsigned int jj=0; jj < num_patches; ++jj)
-        {
+        for (unsigned int jj=0; jj < num_patches; ++jj) {
             float A=0,B=0,C=0,D=0;
             LocalIntegrations integral;
             const BasicNodePatch& targ_patch = get_patch(jj);
-            if (ii==jj)
-            {
+            if (ii==jj) {
                 singular_BEM_kernels(kappa, src_patch, A, B, C, D);
                 B += fGeometricCorrection(src_patch.gc, src_patch.dielectric_ratio);
                 C -= hGeometricCorrection(src_patch.gc, src_patch.dielectric_ratio);
             }
-            else
-            {
+            else {
                 integral.init(kappa, src_patch, targ_patch);
                 A = integral.Apt;
                 B = integral.Bpt;
@@ -631,34 +706,30 @@ void BEEP::write_matrix() const
     boost::scoped_array<char> bufA(new char[BUFSIZE]);
     boost::scoped_array<char> bufB(new char[BUFSIZE]);
     
-    for (unsigned int ii=0; ii < num_patches; ++ii)
-    {
+    for (unsigned int ii=0; ii < num_patches; ++ii) {
         //assert(fiB.good() && fiA.good());
         fiA.getline(bufA.get(), BUFSIZE, '\n');
         fiB.getline(bufB.get(), BUFSIZE, '\n');
-        final << std::string(bufB.get()) << " " << std::string(bufA.get()) << "\n";
+        final << std::string(bufB.get()) << " " << std::string(bufA.get())
+		      << "\n";
     }
-    for (unsigned int ii=0; ii < num_patches; ++ii)
-    {
+    for (unsigned int ii=0; ii < num_patches; ++ii) {
         //assert(fiD.good() && fiC.good());
         fiC.getline(bufA.get(), BUFSIZE, '\n');
         fiD.getline(bufB.get(), BUFSIZE, '\n');
-        final << std::string(bufB.get()) << " " << std::string(bufA.get()) << "\n";
+        final << std::string(bufB.get()) << " " << std::string(bufA.get())
+		      << "\n";
     }
     fiA.close();
     fiB.close();
     fiC.close();
     fiD.close();
     final.close();
-    
-    return;
-    
 }
 
-size_t BEEP::count_explicit_integrations() const
-{
-    // dry run of precalc_neighbour_interactions where we figure out just how much memory we're gonna need...
-    // (best to know beforehand than use up all available memory then fail...)
+size_t BEEP::count_explicit_integrations() const {
+    // dry run of precalc_neighbour_interactions to determine how much memory
+    // is required (avoiding using all available memory then failing...)
     unsigned int total_local_ints=0;
     const FMM_BEM_Octree& fmm_octree = *fmm;
     return fmm_octree.calc_neighbourhood_interacts();
@@ -685,17 +756,17 @@ size_t BEEP::count_explicit_integrations() const
 //     return total_local_ints;
 }
 
-double BEEP::calc_local_neighbourhood_memory_requirement() const
-{
+double BEEP::calc_local_neighbourhood_memory_requirement() const {
     size_t total_local_ints = count_explicit_integrations();
-    const double megs = static_cast<double>(sizeof(LocalIntegrations)*total_local_ints)/(1024*1024);
-    std::cout << total_local_ints << " local integrations --> " << megs << " MB" << std::endl;
+    const double megs = static_cast<double>(
+					sizeof(LocalIntegrations)*total_local_ints) /(1024*1024);
+    std::cout << total_local_ints << " local integrations --> " << megs
+	          << " MB" << std::endl;
     return megs;
 }
 
-long BEEP::precalc_neighbour_interactions()
-{
-    if (skip_precalcs) { return 0; }
+long BEEP::precalc_neighbour_interactions() {
+    if (skipping_precalcs) return 0;
 
     long start_precalcs = myclock();
     
@@ -714,16 +785,15 @@ long BEEP::precalc_neighbour_interactions()
 #ifdef OPENCL
 
     // cauchy principle value part
-    for (unsigned int ii=0; ii < num_patches; ++ii)
-    {
+    for (unsigned int ii=0; ii < num_patches; ++ii) {
         const BasicNodePatch& np = get_patch(ii);
         double dielectric_ratio = np.get_dielectric_ratio();
         local_ints[ii].set(ii,
-                        ii,
-                        0,
-                        fGeometricCorrection(np.gc, dielectric_ratio),
-                        -hGeometricCorrection(np.gc, dielectric_ratio),
-                        0);
+                           ii,
+                           0,
+                           fGeometricCorrection(np.gc, dielectric_ratio),
+                           -hGeometricCorrection(np.gc, dielectric_ratio),
+                           0);
     }
     
     // create local integrations for the self-geometric interactions
@@ -732,20 +802,21 @@ long BEEP::precalc_neighbour_interactions()
 
     unsigned int chunksize = 128;
     unsigned int ii=0;
-    while (ii < num_patches)
-    {
+    while (ii < num_patches) {
   
         PatchPtrList patch_ptrs(new PPList);
         
         unsigned chunk_ctr=0;
-        for ( ; ii+chunk_ctr < num_patches && chunk_ctr < chunksize; ++chunk_ctr)
+        for ( ; ii+chunk_ctr < num_patches && chunk_ctr < chunksize;
+		     ++chunk_ctr)
         {
             const BasicNodePatch& np = get_patch(ii+chunk_ctr);
             patch_ptrs->push_back(&np);
         }
         
         // singular part
-        SingularBEM* ocl_singular_bem = new SingularBEM(patch_ptrs, kappa, &(gpu_local_ints[ii]));
+        SingularBEM* ocl_singular_bem
+				= new SingularBEM(patch_ptrs, kappa, &(gpu_local_ints[ii]));
         global_ocl_handler.add_work_to_queue(ocl_singular_bem);
         
         ii += chunk_ctr;
@@ -754,9 +825,8 @@ long BEEP::precalc_neighbour_interactions()
     // block until all GPU work is complete
     //global_ocl_handler.wait_until_idle();
     
-#else
-    for (unsigned int ii=0; ii < num_patches; ++ii)
-    {
+#else  // OPENCL
+    for (unsigned int ii=0; ii < num_patches; ++ii) {
         const BasicNodePatch& np = get_patch(ii);
         double dielectric_ratio = np.get_dielectric_ratio();
         
@@ -770,18 +840,17 @@ long BEEP::precalc_neighbour_interactions()
                            B + fGeometricCorrection(np.gc, dielectric_ratio),
                            C - hGeometricCorrection(np.gc, dielectric_ratio),
                            D);
-                            
-
-
     }
-#endif
-    std::cout << num_patches << " singular integrals took: " << (myclock() - singular_clock) / 1000. << " ms" << std::endl;
+#endif  // OPENCL
+    std::cout << num_patches << " singular integrals took: "
+	          << (myclock() - singular_clock) / 1000. << " ms" << std::endl;
 
     // figure out how much memory will be required
     calc_local_neighbourhood_memory_requirement();
 
 #ifndef CACHE_GPU_RESULTS
-    std::cout << "(Not caching the explicit-integration results anyway though...)" << std::endl;
+    std::cout << "(Not caching the explicit-integration results anyway "
+				 "though...)" << std::endl;
 #endif
     
 #ifdef CACHE_GPU_RESULTS
@@ -793,32 +862,38 @@ long BEEP::precalc_neighbour_interactions()
     // for each leaf node, dump a list of the contents, and the neighbourhood
     // for each node patch of the leaf, integrate over all neighbours
 
-    for (unsigned short level=fmm->get_top_level(); level <= fmm->get_bottom_level(); ++level)
+    for (unsigned short level=fmm->get_top_level();
+	     level <= fmm->get_bottom_level(); ++level)
     {
         FMM_BEM_Octree::NodeList& nodes = fmm->get_node_list(level);
         
         // quadrature_point cache
         std::vector<boost::shared_ptr<QuadList> > qp_cache;
 
-        for (FMM_BEM_Octree::NodeList::const_iterator it=nodes.begin(), end=nodes.end(); it != end; ++it)
+        for (FMM_BEM_Octree::NodeList::const_iterator
+				it=nodes.cbegin(), end=nodes.cend();
+			 it != end; ++it)
         {
             // slightly cumbersome syntax- it's because NodeList is a
             // std::map not a vector/list
             const FMM_BEM_Octree::NodeT& node = *(it->second);
 
             // skip empty nodes and those which are under leaf nodes
-            if (node.isLeaf() == false || node.empty()) { continue; }
+            if (node.isLeaf() == false || node.empty()) continue;
 
             // Get the neighbourlist-- i.e. all patches in the adjacent 26 cubes
-            boost::shared_ptr<std::vector<BasicNodePatch*> > neighbourlist = fmm->get_neighbourhood_contents(node);
+            boost::shared_ptr<std::vector<BasicNodePatch*> > neighbourlist
+				= fmm->get_neighbourhood_contents(node);
             size_t num_neighbours = neighbourlist->size();
             size_t ctr=0;
-            size_t chunksize=static_cast<size_t>(ceil(static_cast<double>(BEM_EXPLICIT_CHUNKSIZE) / node.size()));
-            chunksize = (num_neighbours > chunksize) ? chunksize : num_neighbours;
+            size_t chunksize = static_cast<size_t>(ceil(static_cast<double>
+				(BEM_EXPLICIT_CHUNKSIZE) / node.size()) );
+            chunksize = (num_neighbours > chunksize)
+				? chunksize : num_neighbours;
 
-            while (ctr < num_neighbours)
-            {
-                boost::shared_ptr< std::vector<const BasicNodePatch*> > list_chunk(new std::vector<const BasicNodePatch*>);
+            while (ctr < num_neighbours) {
+                boost::shared_ptr< std::vector<const BasicNodePatch*> >
+					list_chunk(new std::vector<const BasicNodePatch*>);
                 list_chunk->reserve(chunksize);
 
                 for (size_t ii=0; ii < chunksize && ctr < num_neighbours; ++ii)
@@ -836,17 +911,24 @@ long BEEP::precalc_neighbour_interactions()
 #ifdef OPENCL
                 //std::cout << "Size of neighbourlist: " << neighbourlist->size() << std::endl;
                 PatchPtrList cntnts(new PPList);
-                cntnts->insert(cntnts->begin(), node.get_contents().begin(), node.get_contents().end());
-                BEM_Resources* res_ptr = new BEM_Resources(cntnts, list_chunk, kappa, results.get());
+                cntnts->insert(cntnts->begin(), node.get_contents().begin(),
+				                                node.get_contents().end());
+                BEM_Resources* res_ptr
+					= new BEM_Resources(cntnts, list_chunk,
+					                    kappa, results.get());
                 global_ocl_handler.add_work_to_queue(res_ptr);
-#else
-                for (int src_ctr=0; src_ctr < node.get_contents().size(); ++src_ctr)
+#else  // OPENCL
+                for (int src_ctr=0; src_ctr < node.get_contents().size();
+					 ++src_ctr)
                 {
-                    const BasicNodePatch& src_patch = *(node.get_contents()[src_ctr]);
+                    const BasicNodePatch& src_patch
+						= *(node.get_contents()[src_ctr]);
                     #pragma omp parallel for
-                    for (int targ_ctr=0; targ_ctr < list_chunk->size(); ++targ_ctr)
+                    for (int targ_ctr=0; targ_ctr < list_chunk->size();
+					     ++targ_ctr)
                     {
-                        const BasicNodePatch& targ_patch = *((*list_chunk)[targ_ctr]); // that's a bit ugly
+                        const BasicNodePatch& targ_patch
+							= *((*list_chunk)[targ_ctr]); // that's a bit ugly
                         
                         size_t idx = (src_ctr * list_chunk->size()) + targ_ctr;
                         results[idx].init(kappa, src_patch, targ_patch);
@@ -854,8 +936,7 @@ long BEEP::precalc_neighbour_interactions()
                 }
                 running_ctr += size;
                 std::cout << running_ctr << "\r" << std::flush;
-#endif
-
+#endif  // OPENCL
             }
         }
         
@@ -864,79 +945,87 @@ long BEEP::precalc_neighbour_interactions()
         OpenCL_WorkBlob* ocl_cache_ptr = new QuadPointCache(qp_cache);
         global_ocl_handler.add_work_to_queue(ocl_cache_ptr);
 #endif
-
     }
     
     //std::cout << "Done " << local_integrations.size() << " groups of pair-wise local neighbour interactions" << std::endl;
-    std::cout << "Precalc integrals took: " << (myclock() - precalcs_clock) / 1000. << " ms" << std::endl;
-    
-#endif
+    std::cout << "Precalc integrals took: "
+	          << (myclock() - precalcs_clock) / 1000. << " ms" << std::endl;
+#endif  // CACHE_GPU_RESULTS
 
     return (myclock() - start_precalcs);
-
 }
 
-void BEEP::evaluate_local_neighbours(double f_results[], double h_results[])
-{
+void BEEP::evaluate_local_neighbours(double f_results[], double h_results[]) {
 
 #ifndef CACHE_GPU_RESULTS
-    for (unsigned short level=fmm->get_top_level(); level <= fmm->get_bottom_level(); ++level)
+    for (unsigned short level=fmm->get_top_level();
+		 level <= fmm->get_bottom_level(); ++level)
     {
         // quadrature_point cache
         std::vector<boost::shared_ptr<QuadList> > qp_cache;
 
         FMM_BEM_Octree::NodeList& nodes = fmm->get_node_list(level);
-        for (FMM_BEM_Octree::NodeList::const_iterator it=nodes.begin(), end=nodes.end(); it != end; ++it)
+        for (FMM_BEM_Octree::NodeList::const_iterator
+				it=nodes.cbegin(), end=nodes.cend();
+			 it != end; ++it)
         {
             // slightly cumbersome syntax- it's because NodeList is a
             // std::map not a vector/list
             const FMM_BEM_Octree::NodeT& node = *(it->second);
 
             // skip empty nodes and those which are under leaf nodes
-            if (node.isLeaf() == false || node.empty()) { continue; }
+            if (node.isLeaf() == false || node.empty()) continue;
 
             // Get the neighbourlist-- i.e. all patches in the adjacent 26 cubes
-            boost::shared_ptr<std::vector<BasicNodePatch*> > neighbourlist = fmm->get_neighbourhood_contents(node);
+            boost::shared_ptr<std::vector<BasicNodePatch*> > neighbourlist
+				= fmm->get_neighbourhood_contents(node);
             size_t num_neighbours = neighbourlist->size();
             size_t ctr=0;
-            size_t chunksize=static_cast<size_t>(ceil(static_cast<double>(BEM_EXPLICIT_CHUNKSIZE) / node.size()));
-            chunksize = (num_neighbours > chunksize) ? chunksize : num_neighbours;
+            size_t chunksize=static_cast<size_t>(ceil(static_cast<double>
+				(BEM_EXPLICIT_CHUNKSIZE) / node.size()) );
+            chunksize = (num_neighbours > chunksize)
+				? chunksize : num_neighbours;
 
-            while (ctr < num_neighbours)
-            {
-                boost::shared_ptr< std::vector<const BasicNodePatch*> > list_chunk(new std::vector<const BasicNodePatch*>);
+            while (ctr < num_neighbours) {
+                boost::shared_ptr< std::vector<const BasicNodePatch*> >
+					list_chunk(new std::vector<const BasicNodePatch*>);
                 list_chunk->reserve(chunksize);
 
                 for (size_t ii=0; ii < chunksize && ctr < num_neighbours; ++ii)
                 {
                     ((*neighbourlist)[ctr])->obtain_shared_quad_ptrs(qp_cache);
                     list_chunk->push_back((*neighbourlist)[ctr++]);
-
                 }
 #ifdef OPENCL
                 PatchPtrList cntnts(new PPList);
-                cntnts->insert(cntnts->begin(), node.get_contents().begin(), node.get_contents().end());
+                cntnts->insert(cntnts->begin(), node.get_contents().begin(),
+				                                node.get_contents().end());
                 
                 //std::cout << "Size of neighbourlist: " << neighbourlist->size() << std::endl;
-                BEM_OnDemand_Resources* res_ptr = new BEM_OnDemand_Resources(cntnts, list_chunk, kappa, f_lhs.get(), h_lhs.get(), f_results, h_results);
+                BEM_OnDemand_Resources* res_ptr
+					= new BEM_OnDemand_Resources(cntnts, list_chunk, kappa,
+							 f_lhs.get(), h_lhs.get(), f_results, h_results);
                 global_ocl_handler.add_work_to_queue(res_ptr);
-            
-#else
+#else  // OPENCL
                 LocalIntegrations bem_kernels;
 
                 #pragma omp parallel for private(bem_kernels)
-                for (int src_ctr=0; src_ctr < node.get_contents().size(); ++src_ctr)
+                for (int src_ctr=0; src_ctr < node.get_contents().size();
+					 ++src_ctr)
                 {
-                    const BasicNodePatch& src_patch = *(node.get_contents()[src_ctr]);
-                    for (int targ_ctr=0; targ_ctr < list_chunk->size(); ++targ_ctr)
+                    const BasicNodePatch& src_patch
+						= *(node.get_contents()[src_ctr]);
+                    for (int targ_ctr=0; targ_ctr < list_chunk->size();
+						 ++targ_ctr)
                     {
-                        const BasicNodePatch& targ_patch = *((*list_chunk)[targ_ctr]); // that's a bit ugly
+                        const BasicNodePatch& targ_patch
+							= *((*list_chunk)[targ_ctr]); // that's a bit ugly
                         bem_kernels.init(kappa, src_patch, targ_patch);
-                        bem_kernels.evaluate_local_contributions(f_lhs.get(), h_lhs.get(), f_results, h_results);
+                        bem_kernels.evaluate_local_contributions
+							(f_lhs.get(), h_lhs.get(), f_results, h_results);
                     }
                 }
-
-#endif
+#endif  // OPENCL
             }
 
         }
@@ -945,20 +1034,21 @@ void BEEP::evaluate_local_neighbours(double f_results[], double h_results[])
         // ensure that QuadPoints stay in scope for OpenCL
         OpenCL_WorkBlob* ocl_cache_ptr = new QuadPointCache(qp_cache);
         global_ocl_handler.add_work_to_queue(ocl_cache_ptr);
-#endif
-
+#endif  // OPENCL
     }
-
-#endif
+#endif  // CACHE_GPU_RESULTS
 
 #ifdef OPENCL
     // now wait for OpenCL to complete -- in case of precalcs still remaining!
     global_ocl_handler.wait_until_idle();
     sanity_check();
-#endif
+#endif // OPENCL
 
-    // loop over the precalculated local integrations and multiply f/hvals by the matrix elements
-    for (std::vector<LintArray_Size>::const_iterator it=local_integrations.begin(), end=local_integrations.end(); it != end; ++it)
+    // loop over the precalculated local integrations and multiply f/hvals
+    // by the matrix elements
+    for (std::vector<LintArray_Size>::const_iterator
+			it=local_integrations.cbegin(), end=local_integrations.cend();
+		 it != end; ++it)
     {
         const LintArray& array = it->first;
         const size_t& sz = it->second;
@@ -966,14 +1056,14 @@ void BEEP::evaluate_local_neighbours(double f_results[], double h_results[])
         for (size_t ii=0; ii < sz; ++ii)
         {
             //std::cout << ii << " of " << sz << ": " << array[ii] << "\n";
-            array[ii].evaluate_local_contributions(f_lhs.get(), h_lhs.get(), f_results, h_results);
+            array[ii].evaluate_local_contributions
+				(f_lhs.get(), h_lhs.get(), f_results, h_results);
         }
     }
     return;
 }
 
-void BEEP::sanity_check()
-{
+void BEEP::sanity_check() {
     static bool done_sanity = false;
     if (done_sanity) { return ; }
 
@@ -981,38 +1071,42 @@ void BEEP::sanity_check()
     double max_val = 1e6;
     bool force_recalc=false;
 
-    do
-    {
-
-        // check local integrations for bad values (can happen because of GPU memory glitches)
-        for (std::vector<LintArray_Size>::const_iterator it=local_integrations.begin(), end=local_integrations.end(); it != end; ++it)
+    do {
+        // check local integrations for bad values
+        // (can happen because of GPU memory glitches)
+        for (std::vector<LintArray_Size>::const_iterator
+				it=local_integrations.cbegin(), end=local_integrations.cend();
+			 it != end; ++it)
         {
             const LintArray& array = it->first;
             const size_t& sz = it->second;
             //std::cout << "Evaluating: " << sz << " local ints, from mem: " << array.get() << std::endl;
-            for (size_t ii=0; ii < sz; ++ii)
-            {
+            for (size_t ii=0; ii < sz; ++ii) {
 
-                if (array[ii].src_global_idx >= num_patches || array[ii].targ_global_idx >= num_patches) {
-                    std::cout << "Bad index detected, repeating precalcs..." << std::endl;
+                if (array[ii].src_global_idx >= num_patches
+					|| array[ii].targ_global_idx >= num_patches) {
+                    std::cout << "Bad index detected, repeating precalcs..."					          << std::endl;
                     force_recalc = true;
                     break;
                 }
                 if (array[ii].insane(max_val)) {
-                    std::cout << "Detected a crazy value in near-field integrations: " << array[ii] << std::endl;
-                    const BasicNodePatch& src = get_patch(array[ii].src_global_idx);
-                    const BasicNodePatch& targ = get_patch(array[ii].targ_global_idx);
+                    std::cout << "Detected a crazy value in near-field "
+								 "integrations: " << array[ii] << std::endl;
+                    const BasicNodePatch& src
+						= get_patch(array[ii].src_global_idx);
+                    const BasicNodePatch& targ
+						= get_patch(array[ii].targ_global_idx);
                     if (&src == &targ) {
-                        array[ii].set(0,0,0,0,0,0); // ill-conditioned patch- kill it
+						// ill-conditioned patch- kill it
+                        array[ii].set(0,0,0,0,0,0);
                     }
-                    else
-                    {
+                    else {
                         array[ii].init(kappa, src, targ);
                     }
                 }
             }
 
-            if (force_recalc) { break; }
+            if (force_recalc) break;
         }
 
         if (force_recalc) {
@@ -1020,17 +1114,14 @@ void BEEP::sanity_check()
     
 #ifdef OPENCL
             global_ocl_handler.wait_until_idle();
-#endif
-    
+#endif  // OPENCL
         }
-
     } while (force_recalc);
  
     done_sanity = true;
 }
 
-long BEEP::set_rhs()
-{
+long BEEP::set_rhs() {
     using fmm::FMM_Octree_6FIG_ACCURACY;
     using fmm::EvalPt;
     
@@ -1039,46 +1130,53 @@ long BEEP::set_rhs()
     // first get the bounding cube for the mesh
     Vector centre = bounding_cube_centre;
     double edge_length = bounding_cube_edge_length;
-    rhs_octree.reset(new FMM_Octree_6FIG_ACCURACY(MAX_FMM_SIZE, centre, edge_length));
+    rhs_octree.reset(new FMM_Octree_6FIG_ACCURACY
+								(MAX_FMM_SIZE, centre, edge_length) );
     
     std::vector<EvalPt*> eval_pts_rhs;
     size_t num_qps=0;
     // loop over each mesh instance and insert the charges into a big fat octree
-    for (MeshInstanceList::const_iterator it=meshes.begin(), end=meshes.end(); it != end; ++it)
+    for (MeshInstanceList::const_iterator it=meshes.cbegin(), end=meshes.cend();
+		 it != end; ++it)
     {
         const MeshInstance& mesh_instance = **it;
-        for (std::vector< boost::shared_ptr<BasicNodePatch> >::const_iterator np_it=mesh_instance.patches.begin(), np_end=mesh_instance.patches.end();
-                np_it != np_end;
-                ++np_it)
+        for (std::vector< boost::shared_ptr<BasicNodePatch> >::const_iterator
+				np_it = mesh_instance.get_node_patches().cbegin(),
+				np_end = mesh_instance.get_node_patches().cend();
+			 np_it != np_end; ++np_it)
         {
             const BasicNodePatch& np = **np_it;
             boost::shared_ptr<QuadList> qual_pts = np.get_qualocation_points();
-            for (QuadList::const_iterator qp_it = qual_pts->begin(), qp_end=qual_pts->end(); qp_it != qp_end; ++qp_it)
+            for (QuadList::const_iterator
+					qp_it = qual_pts->cbegin(), qp_end=qual_pts->cend();
+				 qp_it != qp_end; ++qp_it)
             {
                 ++num_qps;
             }
         }
-
     }
     eval_pts_rhs.reserve(num_qps);
 
     unsigned int total_charges=0;
     // loop over each mesh instance and insert the charges into a big fat octree
-    for (MeshInstanceList::const_iterator it=meshes.begin(), end=meshes.end(); it != end; ++it)
+    for (MeshInstanceList::const_iterator it=meshes.cbegin(), end=meshes.cend();
+		 it != end; ++it)
     {
         const MeshInstance& mesh_instance = **it;
-        for (std::vector< boost::shared_ptr<Charge> >::const_iterator ch_it=mesh_instance.charges.begin(), ch_end=mesh_instance.charges.end();
-                ch_it != ch_end;
-                ++ch_it)
+        for (std::vector< boost::shared_ptr<Charge> >::const_iterator
+				ch_it = mesh_instance.get_charges().cbegin(),
+				ch_end = mesh_instance.get_charges().cend();
+			 ch_it != ch_end; ++ch_it)
         {
             const Charge& ch = **ch_it;
             rhs_octree->add(ch);
             ++total_charges;
         }
 
-        for (std::vector< boost::shared_ptr<BasicNodePatch> >::const_iterator np_it=mesh_instance.patches.begin(), np_end=mesh_instance.patches.end();
-                np_it != np_end;
-                ++np_it)
+        for (std::vector< boost::shared_ptr<BasicNodePatch> >::const_iterator
+				np_it = mesh_instance.get_node_patches().cbegin(),
+				np_end = mesh_instance.get_node_patches().cend();
+			 np_it != np_end; ++np_it)
         {
             const BasicNodePatch& np = **np_it;
 	    
@@ -1086,32 +1184,37 @@ long BEEP::set_rhs()
             eval_pts_rhs.push_back( new EvalPt( (Vector&) np.get_node() ) );
 #else
             boost::shared_ptr<QuadList> qual_pts = np.get_qualocation_points();
-            for (QuadList::const_iterator qp_it = qual_pts->begin(), qp_end=qual_pts->end(); qp_it != qp_end; ++qp_it)
+            for (QuadList::const_iterator
+					qp_it = qual_pts->cbegin(), qp_end=qual_pts->cend();
+				 qp_it != qp_end; ++qp_it)
             {
                 eval_pts_rhs.push_back( new EvalPt( Vector(qp_it->pt()) ) );
             }
-#endif
+#endif  // CENTROID_COLLOCATION
         }
 
     }
 
-    std::cout << "total charges: " << total_charges << " eval points: " << eval_pts_rhs.size() << std::endl;
+    std::cout << "total charges: " << total_charges << " eval points: "
+	          << eval_pts_rhs.size() << std::endl;
 
     rhs_octree->solve(0.0);
 #ifdef OPENCL
     rhs_octree->evaluate_many(eval_pts_rhs, global_ocl_handler);
 #else
     rhs_octree->evaluate_many(eval_pts_rhs);
-#endif
+#endif // OPENCL
 
     // loop over node patches
     size_t ctr=0, ep_ctr=0;
-    for (MeshInstanceList::const_iterator it=meshes.begin(), end=meshes.end(); it != end; ++it)
+    for (MeshInstanceList::const_iterator it=meshes.cbegin(), end=meshes.cend();
+		 it != end; ++it)
     {
         const MeshInstance& mesh_instance = **it;
-        for (std::vector< boost::shared_ptr<BasicNodePatch> >::const_iterator np_it=mesh_instance.patches.begin(), np_end=mesh_instance.patches.end();
-                np_it != np_end;
-                ++np_it)
+        for (std::vector< boost::shared_ptr<BasicNodePatch> >::const_iterator
+				np_it = mesh_instance.get_node_patches().cbegin(),
+				np_end = mesh_instance.get_node_patches().cend();
+			 np_it != np_end; ++np_it)
         {
             const BasicNodePatch& np = **np_it;
             f_rhs[ctr] = 0;
@@ -1120,33 +1223,38 @@ long BEEP::set_rhs()
 #ifdef CENTROID_COLLOCATION
             EvalPt* ep_ptr = eval_pts_rhs[ep_ctr++];
             f_rhs[ctr] += ep_ptr->get_potential() * ONE_OVER_4PI / Dsolvent;
-            h_rhs[ctr] += ep_ptr->get_field().dot(np.get_normal()) * ONE_OVER_4PI / Dsolvent;
+            h_rhs[ctr] += ep_ptr->get_field().dot(np.get_normal())
+						  * ONE_OVER_4PI / Dsolvent;
             delete ep_ptr;
 
-#else
+#else  // CENTROID_COLLOCATION
             boost::shared_ptr<QuadList> qual_pts = np.get_qualocation_points();
-            for (QuadList::const_iterator qp_it = qual_pts->begin(), qp_end=qual_pts->end(); qp_it != qp_end; ++qp_it)
+            for (QuadList::const_iterator
+					qp_it = qual_pts->cbegin(), qp_end=qual_pts->cend();
+				 qp_it != qp_end; ++qp_it)
             {
                 EvalPt* ep_ptr = eval_pts_rhs[ep_ctr++];
                 f_rhs[ctr] += qp_it->weight() * ep_ptr->get_potential();
-                h_rhs[ctr] += qp_it->weight() * ep_ptr->get_field().dot(qp_it->normal());
+                h_rhs[ctr] += qp_it->weight()
+							  * ep_ptr->get_field().dot(qp_it->normal());
                 delete ep_ptr;
             }
             f_rhs[ctr] *= ONE_OVER_4PI / Dsolvent;
             h_rhs[ctr] *= ONE_OVER_4PI / Dsolvent;
-#endif
+#endif  // CENTROID_COLLOCATION
 
             //std::cout << ctr << ": " << f_rhs[ctr] << " " << h_rhs[ctr] << " " << "\n";
             ++ctr;
         }
     }
-    eval_pts_rhs.clear(); // no longer contains valid pointers 'cos I delete them above
-    std::cout << "RHS took: " << (myclock() - start_rhs_clock) / 1000. << " ms" << std::endl;
+    eval_pts_rhs.clear(); // no longer contains valid pointers - deleted above
+    std::cout << "RHS took: " << (myclock() - start_rhs_clock) / 1000.
+	          << " ms" << std::endl;
     
     // the FMM has some internal profiling we can nab
     vanilla_fmm_timer += rhs_octree->get_timing_info();
     
-    return (myclock() - start_rhs_clock); // return the number of clock ticks taken
+    return (myclock() - start_rhs_clock); // return number of clock ticks taken
 }
 
 unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
@@ -1173,14 +1281,15 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
     memset(preconditioner_rhs.get(),0,sizeof(double)*n);
     memset(preconditioner_lhs.get(),0,sizeof(double)*n);
 
-    const double eps = residual_norm_stop_criteria; // stop when residual smaller than this multiple of rhs norm
+	// stop when residual smaller than this multiple of rhs norm
+    const double eps = residual_norm_stop_criteria;
+
     const bool detailed = true;
     //bool non_zero = false;
 
     // PREPARE RHS
     //std::cout << "RHS:\n";
-    for (unsigned int ctr=0; ctr < num_patches; ++ctr)
-    {
+    for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
         b[ctr] = f_rhs[ctr];
         b[ctr+num_patches] = h_rhs[ctr];
 
@@ -1190,8 +1299,7 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
     // RESCALE?
     const double fscale = 1.0;
     const double hscale = 1.0;
-    for (unsigned int ctr=0; ctr < num_patches; ++ctr)
-    {
+    for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
         b[ctr] /= fscale;
         b[ctr+num_patches] /=hscale;
     }
@@ -1200,39 +1308,45 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
     //cblas_dscal(numCharges*2 - 1,1./hscale,&(b[1]),2);
 
     // INIT INITIAL VALUES to what was set in input fh files
+#ifdef __DELETED__
     bool not_preconditioned = true;
     unsigned int xctr=0;
     const unsigned int offset=num_patches;
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.end(); mit!=mend; ++mit)
+    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.      end(); mit!=mend; ++mit)
     {
         const MeshInstance& minst = **mit;
-        const Mesh& lib_mesh = *(mesh_library[minst.lib_id]);
-        const std::vector<BasicNodePatch>& patches = lib_mesh.get_node_patches();
+        const Mesh& lib_mesh = *minst.mesh_ptr; //*(mesh_library[minst.lib_id]);
+        const std::vector<BasicNodePatch>& patches = lib_mesh.                  get_node_patches();
         for (unsigned int np_ctr=0; np_ctr < patches.size(); ++np_ctr)
         {
             double f_preset = patches[np_ctr].f;
             double h_preset = patches[np_ctr].h;
-            not_preconditioned = not_preconditioned && f_preset == 0.0 && h_preset == 0.0;
+            not_preconditioned = not_preconditioned && f_preset == 0.0 &&       h_preset == 0.0;
             x[xctr] = f_preset;
             x[xctr+offset] = h_preset;
             xctr++;
         }
     }
+#else // __DELETED__
+	bool preconditioned = meshes.init_library_fh_vals(x, num_patches);
+//std::cout << "BEEP::gmres preconditioned " << preconditioned << std::endl;
+#endif // __DELETED__
 
 #ifdef PRECONDITION 
+std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
     // copy the x values into the preconditioner
     memcpy(preconditioner_lhs.get(), x, sizeof(double)*n);
     
     // If the preset fh vals are all zeroes, then it's not a very good
     // initial guess, would be better off with the rhs vector...
-    if (not_preconditioned == false) { // i.e. if preconditioned == true
+    if (preconditioned) {
         
         // pre-conditioning iteration
-        do_bem_fmm_iteration(num_patches, preconditioner_lhs.get(), preconditioner_rhs.get());
+        do_bem_fmm_iteration(num_patches, preconditioner_lhs.get(),
+		                                  preconditioner_rhs.get());
         
         // subtract the preconditioner_rhs from the actual rhs
-        for (unsigned int np_ctr=0; np_ctr < num_patches; ++np_ctr)
-        {
+        for (unsigned int np_ctr=0; np_ctr < num_patches; ++np_ctr) {
             b[np_ctr] -= preconditioner_rhs[np_ctr];
             b[np_ctr+num_patches] -= preconditioner_rhs[np_ctr+num_patches];
         }
@@ -1240,9 +1354,9 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
     
     // set lhs initial guess to rhs
     memcpy(x,b,sizeof(double)*n);
-#endif
+#endif  // PRECONDITION
 
-    // i like smart pointers
+    // smart pointers
     boost::scoped_array<double> _V(new double[n*(m+1)]);
     boost::scoped_array<double> _U(new double[m*(m+1)/2]);
     boost::scoped_array<double> _r(new double[n]);
@@ -1262,8 +1376,9 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
     double** v = _v.get();
     
     for ( int i=0; i<=m; ++i ) v[i]=V+i*n;
+
     int its=-1;
-    {
+    {  // New scope -- this section appears to be imported - untouched
         double gmres_beta, h, rd, dd, nrm2b;
         int j, io, uij, u0j;
         nrm2b=cblas_dnrm2(n,b,1);
@@ -1330,39 +1445,42 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
 
         // R"uckgabe: Zahl der inneren Iterationen
         its = m*(io-1)+j;
-    }
+    }  // End scope
 
     // DEBUG
-    std::cout << "GMRES reached convergence in " << its << " iterations." << std::endl;
+    std::cout << "GMRES reached convergence in " << its << " iterations."
+	          << std::endl;
 
 #ifdef PRECONDITION
     // Add preconditioned values back in
-    if (not_preconditioned == false) 
-    {
+    if (preconditioned) {
         
         double total_E = 0.0;
         unsigned int offset=0;
-        for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+        for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator
+				mit=meshes.cbegin(), mend=meshes.cend();
+			 mit != mend; ++mit)
         {
             MeshInstance& m = **mit;
-            if (m.isSilent()) { continue; }
-            total_E += m.calculate_energy(kappa, &x[offset], &x[offset+num_patches]);
+            if (m.isSilent()) continue;
+std::cout << "BEEP::gmres preconditioned calculate_energies" << std::endl;
+            total_E += m.calculate_energy
+								(kappa, &x[offset], &x[offset+num_patches]);
             offset += m.get_num_node_patches();
         }
-        std::cout << "Total change in energy relative to preconditioner: " << total_E << std::endl;
+        std::cout << "Total change in energy relative to preconditioner: "
+		          << total_E << std::endl;
         
         // add the preconditioned values back on
-        for (unsigned int np_ctr=0; np_ctr < num_patches; ++np_ctr)
-        {
+        for (unsigned int np_ctr=0; np_ctr < num_patches; ++np_ctr) {
             x[np_ctr] += preconditioner_lhs[np_ctr];
             x[np_ctr+num_patches] += preconditioner_lhs[np_ctr+num_patches];
         }
     }
-#endif
+#endif  // PRECONDITION
 
     // get the results
-    for (unsigned int ctr=0; ctr < num_patches; ++ctr)
-    {
+    for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
         f_lhs[ctr] = x[ctr];
         h_lhs[ctr] = x[ctr+num_patches];
     }
@@ -1371,19 +1489,22 @@ unsigned int BEEP::gmres(double residual_norm_stop_criteria, int max_iterations)
     fmm::TimeInfo& profiler = fmm->get_timing_info();
     profiler /= its+1;
     
-    std::cout << "(actual GMRES algo took total of: " << (myclock() - start_gmres - total_iter_timer)/1000. << " ms" << std::endl;
+    std::cout << "(actual GMRES algo took total of: "
+	          << (myclock() - start_gmres - total_iter_timer)/1000. << " ms"
+	          << std::endl;
     
     return its+1;
-
 }
 
-long BEEP::do_bem_fmm_iteration(unsigned int num_patches, double lhs[], double result[])
+long BEEP::do_bem_fmm_iteration(
+	unsigned int num_patches,
+	double lhs[],
+	double result[])
 {
     long start = myclock();
 
     // get lhs from input
-    for (unsigned int ctr=0; ctr < num_patches; ++ctr)
-    {
+    for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
         f_lhs[ctr] = lhs[ctr];
         h_lhs[ctr] = lhs[ctr+num_patches];
     }
@@ -1400,31 +1521,35 @@ long BEEP::do_bem_fmm_iteration(unsigned int num_patches, double lhs[], double r
     memset(fmm_results_f.get(), 0, sizeof(double)*num_patches);
     memset(fmm_results_h.get(), 0, sizeof(double)*num_patches);
 
-
 #ifdef CACHE_GPU_RESULTS
 
-    // If the results are cached, do the fmm first to maximise the amount of useful CPU work
-    // before we idle to wait on the GPU results -- which will only need waiting for the first time round
-    fmm->solve(kappa, beta0, f_lhs.get(), h_lhs.get(), fmm_results_f.get(), fmm_results_h.get());
+    // If the results are cached, do the fmm first to maximise the amount of
+    // useful CPU work before we idle to wait on the GPU results
+    // -- which will only need waiting for the first time round
+    fmm->solve(kappa, beta0, f_lhs.get(), h_lhs.get(),
+	           fmm_results_f.get(), fmm_results_h.get());
     wait_for_local_interactions();
-    evaluate_local_neighbours(explicit_results_f.get(), explicit_results_h.get());
+    evaluate_local_neighbours
+		(explicit_results_f.get(), explicit_results_h.get());
 
-#else
+#else  // CACHE_GPU_RESULTS
 
-    // if the results are not cached, then need to kick them off on the GPU asap, then do the CPU
-    // fmm work in the foreground, then wait for the GPU to complete.
-    evaluate_local_neighbours(explicit_results_f.get(), explicit_results_h.get());
-    fmm->solve(kappa, beta0, f_lhs.get(), h_lhs.get(), fmm_results_f.get(), fmm_results_h.get());
+    // if the results are not cached, need to kick them off on the GPU asap,
+    // then do CPU fmm work in the foreground, then wait for GPU to complete.
+    evaluate_local_neighbours
+		(explicit_results_f.get(), explicit_results_h.get());
+    fmm->solve(kappa, beta0, f_lhs.get(), h_lhs.get(),
+	           fmm_results_f.get(), fmm_results_h.get());
     wait_for_local_interactions();
 
-#endif
+#endif  // CACHE_GPU_RESULTS
 
     // write rhs back
     //std::cout << "Matrix-Vector Result:\n";
-    for (unsigned int ctr=0; ctr < num_patches; ++ctr)
-    {
+    for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
         result[ctr] = explicit_results_f[ctr] + fmm_results_f[ctr];
-        result[ctr + num_patches] = explicit_results_h[ctr] + fmm_results_h[ctr];
+        result[ctr + num_patches]
+			= explicit_results_h[ctr] + fmm_results_h[ctr];
     }
 
 #if 0 
@@ -1463,15 +1588,15 @@ long BEEP::do_bem_fmm_iteration(unsigned int num_patches, double lhs[], double r
     double mean_prop_h = total_prop_h / num_patches;
     std::cout << "h proportions min/max/ave: " << min_prop_h << " " << max_prop_h << " " << mean_prop_h << "\n";
     
-#endif
+#endif // if 0
 
-    std::cout << "Time for BEM iteration: " << (myclock() - start) / 1000. << " ms " << std::endl;
+    std::cout << "Time for BEM iteration: " << (myclock() - start) / 1000.
+	          << " ms " << std::endl;
 
     return (myclock() - start);
 }
 
-long BEEP::init_fmm_octree()
-{
+long BEEP::init_fmm_octree() {
     // initialise an FMM octree for the mesh node patches -- subsequent calls
     // need to set the charge magnitudes at the patch locations (4 values)
     // then solve the FMM twice (for kappa=[smallnumber, approx. 0] and
@@ -1486,7 +1611,8 @@ long BEEP::init_fmm_octree()
     std::cout << centre << " " << edge_length << std::endl;
 
     // set the neighbourhood size
-    unsigned int nbsize = (cmdline_bem_nbsize == -1) ? DEFAULT_BEM_NEIGHBOURHOOD_SIZE : cmdline_bem_nbsize;
+    unsigned int nbsize = (cmdline_bem_nbsize == -1)
+		? DEFAULT_BEM_NEIGHBOURHOOD_SIZE : cmdline_bem_nbsize;
     
     fmm.reset(new FMM_BEM_Octree(nbsize, centre, edge_length));
     
@@ -1503,14 +1629,19 @@ long BEEP::init_fmm_octree()
     //fmm->set_max_depth(0);
 
     // insert patches (universe coords) into the octree
-    for (MeshInstanceList::iterator mit=meshes.begin(), mend=meshes.end(); mit!=mend; ++mit)
+    for (MeshInstanceList::iterator mit=meshes.begin(), mend=meshes.end();
+		 mit!=mend; ++mit)
     {
         MeshInstance& minst = **mit;
-        for (std::vector< boost::shared_ptr<BasicNodePatch> >::iterator np_it=minst.patches.begin(), np_end=minst.patches.end(); np_it != np_end; ++np_it)
+        for (std::vector< boost::shared_ptr<BasicNodePatch> >::iterator
+				np_it = minst.get_node_patches().begin(),
+				np_end = minst.get_node_patches().end();
+			 np_it != np_end; ++np_it)
         {
-            // The FMM/BEM can accept shared pointers to BasicNodePatch objects (since BasicNodePatch has a Vector-type interface)
-            // Note: the fmm/bem tree will stash a copy of the shared pointer so the stored objects
-            // will remain valid for the lifetime of the fmm tree.
+            // The FMM/BEM can accept shared pointers to BasicNodePatch objects
+            // (since BasicNodePatch has a Vector-type interface)
+            // Note: the fmm/bem tree will stash a copy of the shared pointer
+            // so the stored objects will remain valid for the fmm tree lifetime
             fmm->add(*np_it);
         }
     }
@@ -1523,16 +1654,17 @@ long BEEP::init_fmm_octree()
     return (myclock() - start_init_fmm);
 }
 
-void BEEP::set_bounding_cube(const Vector& new_bc_centre, double new_edge_length)
+void BEEP::set_bounding_cube(
+	const Vector& new_bc_centre,
+	double new_edge_length)
 {
     bounding_cube_centre = new_bc_centre;
     bounding_cube_edge_length = new_edge_length;
     manually_set_bounding_cube = true;
 }
 
-void BEEP::calculate_bounding_cube()
-{
-    if (manually_set_bounding_cube == true) { return; }
+void BEEP::calculate_bounding_cube() {
+    if (manually_set_bounding_cube == true) return;
 
     Vector max(-1e99,-1e99,-1e99); // this will be the 'top right' corner
     Vector min(1e99,1e99,1e99); // and this will be 'bottom left'
@@ -1541,14 +1673,14 @@ void BEEP::calculate_bounding_cube()
     // loop over vertices in the mesh
 
     assert(meshes.size() > 0);
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.end(); mit!=mend; ++mit)
+    for (MeshInstanceList::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit!=mend; ++mit)
     {
         const MeshInstance& m = **mit;
-        unsigned int mesh_lib_id = m.lib_id;
+		double radius = m.get_radius();
 
-        double radius = mesh_library[mesh_lib_id]->get_radius();
-
-        v = m.xyz_offset + Vector(radius, radius, radius);
+        v = m.get_xyz_offset() + Vector(radius, radius, radius);
         max.x = v.x > max.x ? v.x : max.x;
         max.y = v.y > max.y ? v.y : max.y;
         max.z = v.z > max.z ? v.z : max.z;
@@ -1557,7 +1689,7 @@ void BEEP::calculate_bounding_cube()
         min.y = v.y < min.y ? v.y : min.y;
         min.z = v.z < min.z ? v.z : min.z;
 
-        v = m.xyz_offset - Vector(radius, radius, radius);
+        v = m.get_xyz_offset() - Vector(radius, radius, radius);
         max.x = v.x > max.x ? v.x : max.x;
         max.y = v.y > max.y ? v.y : max.y;
         max.z = v.z > max.z ? v.z : max.z;
@@ -1565,28 +1697,27 @@ void BEEP::calculate_bounding_cube()
         min.x = v.x < min.x ? v.x : min.x;
         min.y = v.y < min.y ? v.y : min.y;
         min.z = v.z < min.z ? v.z : min.z;
-
     }
 
     // figure out the maximum edge length in x/y/z dimension
     Vector diff = max - min;
     bounding_cube_edge_length = diff.y > diff.x ? diff.y : diff.x;
-    bounding_cube_edge_length = diff.z > bounding_cube_edge_length ? diff.z : bounding_cube_edge_length;
+    bounding_cube_edge_length = (diff.z > bounding_cube_edge_length)
+		? diff.z : bounding_cube_edge_length;
     assert(bounding_cube_edge_length > 0.0);
 
     // centre of the cube is the mid point of the two extremities
     bounding_cube_centre = (max + min) / 2.0;
-
-    return;
 }
 
-double BEEP::get_potential_at_point(const Vector& pt) const
-{
+double BEEP::get_potential_at_point(const Vector& pt) const {
     bool inside_mesh = false;
     double potential = 0.0; // the return value
 
     // first need to figure out if the point is within a mesh instance
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (MeshInstanceList::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         const MeshInstance& minst = **mit;
         if (minst.pt_is_internal(pt)) {
@@ -1596,31 +1727,30 @@ double BEEP::get_potential_at_point(const Vector& pt) const
         }
     }
     
-    // if the above loop found that the point was within a mesh, then the potential
-    // will now have been calculated and we can return
-    if (inside_mesh)
-    {
-        return potential;
-    }
+    // if the above loop found that the point was within a mesh, then the
+    // potential will now have been calculated and we can return
+    if (inside_mesh) return potential;
 
     // otherwise we must calculate the total potential by integrating all
     // surface solutions
-    for (MeshInstanceList::const_iterator mit=meshes.begin(), mend=meshes.end(); mit != mend; ++mit)
+    for (MeshInstanceList::const_iterator
+			mit=meshes.cbegin(), mend=meshes.cend();
+		 mit != mend; ++mit)
     {
         const MeshInstance& minst = **mit;
         potential += minst.get_potential_at_external_pt(pt, kappa);
     }
 
     return potential;
-
 }
 
-void BEEP::write_opendx_xyz(const std::string& filename, 
-                            unsigned int x, 
-                            unsigned int y, 
-                            unsigned int z,
-                            const Vector& edges,
-                            const Vector& centre) const
+void BEEP::write_opendx_xyz(
+	const std::string& filename, 
+	unsigned int x, 
+	unsigned int y, 
+	unsigned int z,
+	const Vector& edges,
+	const Vector& centre) const
 {
     GridParms grid;
     grid.x_pts = x;
@@ -1634,10 +1764,13 @@ void BEEP::write_opendx_xyz(const std::string& filename,
     grid.origin_z = centre.z - (grid.z_angstroms/2.);
 
     write_opendx_grid(filename, grid);
-    
 }
 
-void BEEP::write_opendx(const std::string& filename, unsigned int x, unsigned int y, unsigned int z) const
+void BEEP::write_opendx(
+	const std::string& filename,
+	unsigned int x,
+	unsigned int y,
+	unsigned int z) const
 {
     GridParms grid;
     grid.x_pts = x;
@@ -1653,7 +1786,9 @@ void BEEP::write_opendx(const std::string& filename, unsigned int x, unsigned in
     write_opendx_grid(filename, grid);
 }
 
-void BEEP::write_opendx_grid(const std::string& filename, const GridParms& grid) const
+void BEEP::write_opendx_grid(
+	const std::string& filename,
+	const GridParms& grid) const
 {
     
     std::ofstream buf(filename.c_str());
@@ -1666,28 +1801,24 @@ void BEEP::write_opendx_grid(const std::string& filename, const GridParms& grid)
     boost::scoped_array<double> vals(new double[z]);
     
     int ii=0;
-    for (unsigned int xctr=0; xctr < x; ++xctr)
-    {
-        for (unsigned int yctr=0; yctr < y; ++yctr)
-        {
+    for (unsigned int xctr=0; xctr < x; ++xctr) {
+        for (unsigned int yctr=0; yctr < y; ++yctr) {
             #pragma omp parallel for
-            for (unsigned int zctr=0; zctr < z; ++zctr)
-            {
+            for (unsigned int zctr=0; zctr < z; ++zctr) {
                 Vector xyz = grid.GridIdxToPos(xctr, yctr, zctr);
-                double pot = get_potential_at_point(xyz) * beep_constants::convert_potential_to_kT_per_e;
+                double pot = get_potential_at_point(xyz)
+							 * beep_constants::convert_potential_to_kT_per_e;
                 vals[zctr] = pot;
             }
 
-            for (unsigned int zctr=0; zctr < z; ++zctr)
-            {
+            for (unsigned int zctr=0; zctr < z; ++zctr) {
                 buf << boost::format("% 13.6e ") % vals[zctr]; 
                 //buf << vals[zctr] << " ";
                 if (++ii == 3) { ii=0; buf << "\n";  }
             }
-
         }
     }
     buf << grid.OpenDX_Suffix();
     buf.close();
-
 }
+

@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from pybeep import Mesh
-from string import atof
 import gts_utils
 import kintools
 
@@ -28,7 +27,7 @@ def dump_xyzn(gts_filename, xyzn_filename):
     for np in mesh.node_patches:
         x,y,z = np.node()
         xn,yn,zn = np.normal()
-        print >>fout, "%f %f %f %f %f %f" %(x,y,z, xn,yn,zn)
+        print("%f %f %f %f %f %f" %(x,y,z, xn,yn,zn), file=fout)
     fout.close()
 
     return
@@ -36,11 +35,11 @@ def dump_xyzn(gts_filename, xyzn_filename):
 def colour_delta_results(mtz_filename, base_results_filename, results_filename, kin_filename, scale_f=0, scale_h=0):
     
     try:
-        scale_f = atof(scale_f)
+        scale_f = float(scale_f)
     except:
         pass
     try:
-        scale_h = atof(scale_h)
+        scale_h = float(scale_h)
     except:
         pass
     
@@ -52,8 +51,8 @@ def colour_delta_results(mtz_filename, base_results_filename, results_filename, 
     assert(len(results) == mesh.num_vertices)
 
     for line_base, line, v in zip(base_results, results, mesh.node_patches):
-        f0,h0 = [atof(xx) for xx in line_base.split()]
-        f,h = [atof(xx) for xx in line.split()]
+        f0,h0 = [float(xx) for xx in line_base.split()]
+        f,h = [float(xx) for xx in line.split()]
         v.f = f - f0
         v.h = h - h0
 
@@ -66,22 +65,22 @@ def colour_delta_results(mtz_filename, base_results_filename, results_filename, 
     if (scale_f == 0): scale_f = max_f
     if (scale_h == 0): scale_h = max_h
 
-    print "f/h scale factors: %f / %f (max abs f/h vals: %f / %f)" %(scale_f, scale_h, max_f, max_h)
+    print("f/h scale factors: %f / %f (max abs f/h vals: %f / %f)" %(scale_f, scale_h, max_f, max_h))
 
     kin_out = open(kin_filename, 'w')
-    print >>kin_out, "@kinemage\n"
-    print >>kin_out, kintools.hundred_red_blue_colours()
-    print >>kin_out, mesh.kinemage_fh_vals(scale_f, scale_h, 100)
+    print(kin_out, "@kinemage\n")
+    print(kintools.hundred_red_blue_colours(), file=kin_out)
+    print(mesh.kinemage_fh_vals(scale_f, scale_h, 100), file=kin_out)
     kin_out.close()
     
 def colour_mesh_results(mtz_filename, results_filename, kin_filename, scale_f=0, scale_h=0):
     
     try:
-        scale_f = atof(scale_f)
+        scale_f = float(scale_f)
     except:
         pass
     try:
-        scale_h = atof(scale_h)
+        scale_h = float(scale_h)
     except:
         pass
     
@@ -92,7 +91,7 @@ def colour_mesh_results(mtz_filename, results_filename, kin_filename, scale_f=0,
     assert(len(results) == mesh.num_vertices)
 
     for line, v in zip(results, mesh.node_patches):
-        f,h = [atof(xx) for xx in line.split()]
+        f,h = [float(xx) for xx in line.split()]
         v.f = f
         v.h = h
 
@@ -105,12 +104,12 @@ def colour_mesh_results(mtz_filename, results_filename, kin_filename, scale_f=0,
     if (scale_f == 0): scale_f = max_f
     if (scale_h == 0): scale_h = max_h
 
-    print "f/h scale factors: %f / %f (max abs f/h vals: %f / %f)" %(scale_f, scale_h, max_f, max_h)
+    print("f/h scale factors: %f / %f (max abs f/h vals: %f / %f)" %(scale_f, scale_h, max_f, max_h))
 
     kin_out = open(kin_filename, 'w')
-    print >>kin_out, "@kinemage\n"
-    print >>kin_out, kintools.hundred_red_blue_colours()
-    print >>kin_out, mesh.kinemage_fh_vals(scale_f, scale_h, 100)
+    print("@kinemage\n", file=kin_out)
+    print(kintools.hundred_red_blue_colours(), file=kin_out)
+    print(mesh.kinemage_fh_vals(scale_f, scale_h, 100), file=kin_out)
     kin_out.close()
     return
 
@@ -131,10 +130,9 @@ def precalc_energy_vector(gts_filename, xyzq_filename, energy_filename):
 
     # add charges
     from _BEM import Charge, Vector
-    from string import atof
     cpp_charges = []
     for line in open(xyzq_filename,'r').readlines():
-        x,y,z,q,r = [atof(xx) for xx in line.split()]
+        x,y,z,q,r = [float(xx) for xx in line.split()]
         cpp_charges.append(Charge(q, Vector(x,y,z)))
     mesh.add_charges(cpp_charges)
 
@@ -145,7 +143,7 @@ def precalc_energy_vector(gts_filename, xyzq_filename, energy_filename):
 
     fout = open(energy_filename, 'w')
     for ff,hh in zip(fvals, hvals):
-        print >>fout, "%e %e" %(ff, hh)
+        print("%e %e" %(ff, hh), file=fout)
     fout.close()
     return
 
@@ -170,10 +168,9 @@ def precalc_peak_splitting_surface_integrals(gts_filename,
 
     # add charges
     from _BEM import Charge, Vector
-    from string import atof
     cpp_charges = []
     for line in open(xyzq_filename,'r').readlines():
-        x,y,z,q,r = [atof(xx) for xx in line.split()]
+        x,y,z,q,r = [float(xx) for xx in line.split()]
         cpp_charges.append(Charge(q, Vector(x,y,z)))
     mesh.add_charges(cpp_charges)
 
@@ -186,7 +183,7 @@ def precalc_peak_splitting_surface_integrals(gts_filename,
     #print "Writing peaks to ", peaks_filename
     fout = open(peak_filename, 'w')
     for ff,hh in zip(fvals, hvals):
-        print >>fout, "%e %e" %(ff, hh)
+        print("%e %e" %(ff, hh), file=fout)
     fout.close()
     return
 
@@ -210,10 +207,9 @@ def precalc_rhs(gts_filename,
 
     # add charges
     from _BEM import Charge, Vector
-    from string import atof
     cpp_charges = []
     for line in open(xyzq_filename,'r').readlines():
-        x,y,z,q,r = [atof(xx) for xx in line.split()]
+        x,y,z,q,r = [float(xx) for xx in line.split()]
         cpp_charges.append(Charge(q, Vector(x,y,z)))
     mesh.add_charges(cpp_charges)
 
@@ -224,7 +220,7 @@ def precalc_rhs(gts_filename,
 
     fout = open(rhs_filename, 'w')
     for ff,hh in zip(fvals, hvals):
-        print >>fout, "%e %e" %(ff, hh)
+        print("%e %e" %(ff, hh), file=fout)
     fout.close()
     return
 
@@ -245,10 +241,9 @@ def precalc_peak_energy(gts_filename, xyzq_filename, kappa, Dext, Dint):
 
     # add charges
     from _BEM import Charge, Vector
-    from string import atof
     cpp_charges = []
     for line in open(xyzq_filename,'r').readlines():
-        x,y,z,q,r = [atof(xx) for xx in line.split()]
+        x,y,z,q,r = [float(xx) for xx in line.split()]
         cpp_charges.append(Charge(q, Vector(x,y,z)))
     mesh.add_charges(cpp_charges)
 
@@ -263,7 +258,6 @@ def precalc_peak_energy(gts_filename, xyzq_filename, kappa, Dext, Dint):
 
 def calc_energy(energy_precalc_filename, fh_filename, epsilon_ratio):
     """Calculate the energy using a results file and a pre-calc file."""
-    from string import atof
 
     energy_precalc_lines = open(energy_precalc_filename,'r').readlines()
     fh_val_lines = open(fh_filename, 'r').readlines()
@@ -272,14 +266,14 @@ def calc_energy(energy_precalc_filename, fh_filename, epsilon_ratio):
 
     energy = 0.0
     for e_line, fh_line in zip(energy_precalc_lines, fh_val_lines):
-        ef,eh = [atof(xx) for xx in e_line.split()]
-        f,h = [atof(xx) for xx in fh_line.split()]
+        ef,eh = [float(xx) for xx in e_line.split()]
+        f,h = [float(xx) for xx in fh_line.split()]
         energy += f*ef + h*eh*epsilon_ratio;
 
     import constants
     con = constants.Avogadro*constants.elementary_charge*constants.elementary_charge \
       / (constants.epsilon0 * constants.Angstroms * 1000.0)
-    print "Energy is %f" %(energy * con)
+    print("Energy is %f" %(energy * con))
 
     return
 
@@ -290,4 +284,4 @@ if __name__ == "__main__":
     if (locals().has_key(mode)):
         locals()[mode](*sys.argv[2:])
     else:
-        print "Can't run that: try one of these... ", locals()
+        print("Can't run that: try one of these... ", locals())

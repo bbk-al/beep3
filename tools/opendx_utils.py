@@ -150,7 +150,7 @@ class PotentialGrid(object):
         
         except BadGridPoint:
             
-            print "position passed in is outside of the grid defined by this opendx file"
+            print("position passed in is outside of the grid defined by this opendx file")
             return 0.0
 
         idx_in_file = int(x * (gridparms.y_pts*gridparms.z_pts) + \
@@ -180,10 +180,10 @@ if __name__ == "__main__":
     
     opendx_filename = "barnase-barstar/barnase.dx"
     grd = copy_GridParms_from_opendx_file(opendx_filename)
-    print grd.OpenDX_Preamble()
+    print(grd.OpenDX_Preamble())
 
-    print PotentialGrid.get_potential_from_file(opendx_filename, 0.0, 0.0, 0.0)
-    print PotentialGrid.get_potential_from_file(opendx_filename, 2.0e-9, -1.0e-8, 0.0)
+    print(PotentialGrid.get_potential_from_file(opendx_filename, 0.0, 0.0, 0.0))
+    print(PotentialGrid.get_potential_from_file(opendx_filename, 2.0e-9, -1.0e-8, 0.0))
     
     #grid, results = read_opendx_file(opendx_filename)
     #print results[0,0,0]

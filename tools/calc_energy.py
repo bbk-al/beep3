@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from pybeep import *
 
@@ -39,5 +39,5 @@ if __name__=="__main__":
         kahan_force = (t_vec - qe_force) - y_vec
         qe_force = t_vec
 
-    print energy * 0.5 * constants.convert_energy_to_kj_per_mol
+    print(energy * 0.5 * constants.convert_energy_to_kj_per_mol)
 

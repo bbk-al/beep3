@@ -1,9 +1,8 @@
-    /*
-* mesh.cpp
-*
-*  Created on: 21 Jul 2010
-*      Author: david
-*/
+/*      Author: david fallaize    Created on: 21 Jul 2010 */
+
+/*! \file mesh.cpp
+ * \brief This module implements the reference mesh class.
+ */
 
 #include "../common/math_vector.h"
 #include "mesh.h"
@@ -22,43 +21,44 @@
 #include "off_utils.h"
 #include <boost/scoped_ptr.hpp>
 
-Mesh::Mesh(const Mesh& other)
-{
+namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
 
+Mesh::Mesh(const Mesh& other) {
     vertices.reserve(other.vertices.size());
     triangles.reserve(other.triangles.size());
     node_patches.reserve(other.node_patches.size());
     charges.reserve(other.charges.size());
 
-    vertices.insert(vertices.end(), other.vertices.begin(), other.vertices.end());
-    triangles.insert(triangles.end(), other.triangles.begin(), other.triangles.end());
-    node_patches.insert(node_patches.end(), other.node_patches.begin(), other.node_patches.end());
+    vertices.insert
+		(vertices.end(), other.vertices.begin(), other.vertices.end());
+    triangles.insert
+		(triangles.end(), other.triangles.begin(), other.triangles.end());
+    node_patches.insert(node_patches.end(),
+					    other.node_patches.begin(), other.node_patches.end());
     charges.insert(charges.end(), other.charges.begin(), other.charges.end());
 
     net_charge = other.net_charge;
     centre = other.centre;
     radius = other.radius;
     done_energy_precalcs = other.done_energy_precalcs;
-
-    return;
 }
 
-Mesh::~Mesh()
-{
+Mesh::~Mesh() {
     // delete the dynamically allocated triangles
-    for (size_t ii=0; ii < triangle_ptrs.size(); ++ii)
-    {
+    for (size_t ii=0; ii < triangle_ptrs.size(); ++ii) {
         delete triangle_ptrs[ii];
     }
- 
 }
 
 Mesh::Mesh(const std::string& mesh_filename,
-            const std::string& xyzqr_filename,
-            bool force_planar) : done_energy_precalcs(false)		
+           const std::string& xyzqr_filename,
+           bool force_planar
+		  ) : done_energy_precalcs(false)		
 {
-    init_mesh(mesh_filename);
-    init_charges(xyzqr_filename);
+	fs::path mesh_path{mesh_filename};
+    init_mesh(mesh_path);
+	fs::path xyzqr_path{xyzqr_filename};
+    init_charges(xyzqr_path);
     
     // default to charge centroid...
     calculate_charges_centroid();
@@ -76,22 +76,20 @@ Mesh::Mesh(const std::string& mesh_filename,
     radius = calculate_radius();
 
     init_energy_precalcs();
-
 }
 
 void Mesh::init(const std::string& mesh_filename,
                 bool force_planar)
 {
     // decompress the mesh tarball to temp folder
-    mesh_tarball mesh_tar;
     try {
-        mesh_tar.init(mesh_filename);
+		MeshTarball mesh_tar{mesh_filename};
 
         // get the paths of the extracted files
-        std::string mesh_filename = mesh_tar.get_mesh_filename();
-        std::string xyzqr_filename = mesh_tar.get_xyzqr_filename();
-        std::string centre_filename = mesh_tar.get_centre_filename();
-        std::string energies_filename = mesh_tar.get_energies_filename();
+        fs::path mesh_filename = mesh_tar.get_mesh_filename();
+        fs::path xyzqr_filename = mesh_tar.get_xyzqr_filename();
+        fs::path centre_filename = mesh_tar.get_centre_filename();
+        fs::path energies_filename = mesh_tar.get_energies_filename();
 
         // init the mesh using the pre-calculated files (nodes and quads etc.)
         init_mesh(mesh_filename);
@@ -108,27 +106,23 @@ void Mesh::init(const std::string& mesh_filename,
         create_node_patches();
 	
     	// read energy precalcs from data file
-        if (force_planar)
-        {
+        if (force_planar) {
              init_energy_precalcs();
         }
-        else
-        {
+        else {
             read_energy_precalcs(energies_filename);    
         }
         
-        // read the fh values (if they have been defined in the mesh-tar-gzip file)
+        // read the fh values (if they are defined in the mesh-tar-gzip file)
         try {
             // this will throw an exception if the fh_file doesn't exist
-            std::string fh_filename = mesh_tar.get_fh_filename();
-            if (fh_filename.empty()) { throw mesh_tarball::Mesh_TarBall_Exception(); }
+            fs::path fh_filename = mesh_tar.get_fh_filename();
             
             // if haven't thrown an exception by this point then
             // can load fh values from file
             init_fh_vals(fh_filename);
         }
-        catch (mesh_tarball::Mesh_TarBall_Exception)
-        {
+        catch (MeshTarball::MeshTarball_Exception) {
             // no FH values in the .mtz file
             // so nothing to do!
         }
@@ -137,7 +131,7 @@ void Mesh::init(const std::string& mesh_filename,
         radius = calculate_radius();
 
     }
-    catch (mesh_tarball::Mesh_TarBall_Exception) {
+    catch (MeshTarball::MeshTarball_Exception) {
         throw MeshError();
     }
 
@@ -151,17 +145,19 @@ void Mesh::init(const std::string& mesh_filename,
 //	std::ofstream fout("mesh.kin");
 //	fout << buf.str();
 //	fout.close();
-
-    return;
-
 }
 
-std::vector<Charge> Mesh::get_ecm_charges(const std::string& ecm_filename, const Quaternion& rot_to_universe, const Vector& xyz_offset) const
+std::vector<Charge> Mesh::get_ecm_charges(
+	const std::string& ecm_filename,
+	const Quaternion& rot_to_universe,
+	const Vector& xyz_offset) const
 {
     std::vector<Charge> ecm_charges;
     
     Charge::read_charges_from_file(ecm_filename, ecm_charges);
-    for (std::vector<Charge>::iterator it=ecm_charges.begin(), end=ecm_charges.end(); it != end; ++it)
+    for (std::vector<Charge>::iterator
+			it=ecm_charges.begin(), end=ecm_charges.end();
+		 it != end; ++it)
     {
         it->change_coordinate_frame(centre, rot_to_universe, xyz_offset);
     }
@@ -169,49 +165,44 @@ std::vector<Charge> Mesh::get_ecm_charges(const std::string& ecm_filename, const
 	return ecm_charges;
 }
 
-void Mesh::init_centre(const std::string& centre_filename)
-{
+void Mesh::init_centre(const fs::path& centre_filename) {
     // open the file
-    std::ifstream centre_file;
-    centre_file.open(centre_filename.c_str());
+    fs::ifstream centre_file;
+    centre_file.open(centre_filename);
     assert(centre_file.good());
 
     centre_file >> centre.x >> centre.y >> centre.z;
     //std::cout << "Read centre: " << centre << std::endl;
 
     centre_file.close();
-
 }
 
-void Mesh::init_mesh(const std::string& mesh_filename)
-{
+void Mesh::init_mesh(const fs::path& mesh_filename) {
     
-    if (mesh_filename.substr(mesh_filename.find_last_of(".") + 1) == "off") 
-    {
-        
+	if (mesh_filename.extension() == ".off") {
         // Call a utility function to read the actual file
-        OFF_Surface::read_mesh_from_file(mesh_filename,
+        OFF_Surface::read_mesh_from_file(mesh_filename.string(),
                                          vertices,
                                          triangles);
         
     } 
-    else if (mesh_filename.substr(mesh_filename.find_last_of(".") + 1) == "gts") 
-    {
-        
+	else if (mesh_filename.extension() == ".gts") {
         // Call a utility function to read the actual file
-        GTS_Surface::read_mesh_from_file(mesh_filename,
+        GTS_Surface::read_mesh_from_file(mesh_filename.string(),
                                          vertices,
                                          triangles);
     }
-    else 
-    {
-        std::cerr << "Mesh filename " << mesh_filename << " does not have either a GTS or OFF extension." << std::endl;
+    else {
+        std::cerr << "Mesh filename " << mesh_filename
+		          << " does not have either a GTS or OFF extension."
+		          << std::endl;
         throw MeshError();
     }
     
     // set the total planar area (flat triangles)
     total_planar_area = 0;
-    for (std::vector<Triangle>::const_iterator it=triangles.begin(), end=triangles.end();
+    for (std::vector<Triangle>::const_iterator
+			it=triangles.cbegin(), end=triangles.cend();
          it != end; ++it)
     {
         total_planar_area += it->get_planar_area();
@@ -223,25 +214,23 @@ void Mesh::init_mesh(const std::string& mesh_filename)
     return;
 }
 
-void Mesh::init_charges(const std::string& xyzqr_filename)
-{
+void Mesh::init_charges(const fs::path& xyzqr_filename) {
     // read the charges using utility function in Charge class
     net_charge = Charge::read_charges_from_file(xyzqr_filename, charges);
 
     //std::cout << "Added " << charges.size() << " charges." << std::endl;
     centre = calculate_charges_centroid();
     //std::cout << centre << std::endl;
-
-    return;
 }
 
-double Mesh::calculate_radius()
-{
+double Mesh::calculate_radius() {
     radius = 0.0;
-    for (std::vector<BasicNodePatch>::const_iterator np_it=node_patches.begin(), np_end=node_patches.end();
-        np_it != np_end;
-        ++np_it)
+int i = 0;
+    for (std::vector<BasicNodePatch>::const_iterator
+			np_it=node_patches.cbegin(), np_end=node_patches.cend();
+         np_it != np_end; ++np_it)
     {
+i++;
         double dist = (*np_it - centre).length();
         radius = (dist > radius) ? dist : radius;
     }
@@ -249,16 +238,18 @@ double Mesh::calculate_radius()
     return radius;
 }
 
-double Mesh::calculate_volume() const
-{
+double Mesh::calculate_volume() const {
     double total_volume = 0.0;
-    for (std::vector<Triangle>::const_iterator tri_it = triangles.begin(), tri_end=triangles.end(); tri_it != tri_end; ++tri_it)
+    for (std::vector<Triangle>::const_iterator
+			tri_it = triangles.cbegin(), tri_end=triangles.cend();
+		 tri_it != tri_end; ++tri_it)
     {
         Vector P = tri_it->v1 - centre;
         Vector Q = tri_it->v2 - centre;
         Vector R = tri_it->v3 - centre;
         
-        double pv =  P.x*Q.y*R.z + P.y*Q.z*R.x + P.z*Q.x*R.y - P.x*Q.z*R.y - P.y*Q.x*R.z - P.z*Q.y*R.x;
+        double pv =  P.x*Q.y*R.z + P.y*Q.z*R.x + P.z*Q.x*R.y
+		           - P.x*Q.z*R.y - P.y*Q.x*R.z - P.z*Q.y*R.x;
         total_volume += pv;
     }
     return total_volume / 6.;
@@ -485,38 +476,32 @@ Vector Mesh::calculate_MST_force(const Offsets& offs, double Dsolvent, double ka
     return F*Dsolvent;
 
 }
+#endif // if 0
 
-
-#endif
-
-void Mesh::calculate_vertex_normals()
-{
+void Mesh::calculate_vertex_normals() {
 
     // loop over all vertex objects in the mesh
-    for (unsigned int vctr=0; vctr < vertices.size(); ++vctr)
-    {
+    for (unsigned int vctr=0; vctr < vertices.size(); ++vctr) {
         Vertex& vertex = vertices[vctr];
         //BasicNodePatch& np = node_patches[vctr];
 
         double a_data[9];
-        for (unsigned short ii=0; ii < 9; ++ii)
-        {
+        for (unsigned short ii=0; ii < 9; ++ii) {
             a_data[ii] = 0;
         }
         Vector total_n(0,0,0);
 
-        for (std::vector<unsigned int>::const_iterator connect_it=vertex.triangle_indices.begin(), connect_end=vertex.triangle_indices.end();
-            connect_it != connect_end;
-            ++connect_it)
+        for (std::vector<unsigned int>::const_iterator
+				connect_it=vertex.triangle_indices.cbegin(),
+				connect_end=vertex.triangle_indices.cend();
+             connect_it != connect_end; ++connect_it)
         {
             const Triangle& tri = triangles[*connect_it];
             const Vector& n = tri.get_planar_normal();
             total_n = total_n + n;
 
-            for (unsigned short ii=0; ii < 3; ++ii)
-            {
-                for (unsigned short jj=0; jj < 3; ++jj)
-                {
+            for (unsigned short ii=0; ii < 3; ++ii) {
+                for (unsigned short jj=0; jj < 3; ++jj) {
                     a_data[ii*3 + jj] += n[ii]*n[jj];
                 }
             }
@@ -531,8 +516,7 @@ void Mesh::calculate_vertex_normals()
         gsl_linalg_LU_decomp (&m.matrix, p, &s);
         double detA = gsl_linalg_LU_det(&m.matrix, s);
 
-        if (detA > 1e-6)
-        {
+        if (detA > 1e-6) {
             gsl_linalg_LU_solve (&m.matrix, p, &b.vector, x);
 
             // TODO:: check determinant of matrix before solving
@@ -542,8 +526,7 @@ void Mesh::calculate_vertex_normals()
                                 gsl_vector_get(x,1),
                                 gsl_vector_get(x,2));
         }
-        else
-        {
+        else {
             vertex.normal = total_n / vertex.triangle_indices.size();
         }
 
@@ -555,37 +538,35 @@ void Mesh::calculate_vertex_normals()
         vertex.normal.normalise();
 
     }
-    return;
 }
 
-void Mesh::init_fh_vals(const std::string& fh_filename)
-{
+void Mesh::init_fh_vals(const fs::path& fh_filename) {
   
     // open the file
-    std::ifstream fh_file;
-    fh_file.open(fh_filename.c_str());
+    fs::ifstream fh_file;
+    fh_file.open(fh_filename);
     assert(fh_file.good());
 
-    for (std::vector<BasicNodePatch>::iterator it=node_patches.begin(), end=node_patches.end(); it != end; ++it)
+    for (std::vector<BasicNodePatch>::iterator
+			it=node_patches.begin(), end=node_patches.end();
+		 it != end; ++it)
     {
         BasicNodePatch& np = *it;
         fh_file >> np.f >> np.h;
     }
 
     fh_file.close();
-    
 }
 
-void Mesh::init_energy_precalcs()
-{
+void Mesh::init_energy_precalcs() {
 
     const unsigned int num_patches = node_patches.size();
 #ifdef OPENCL
     boost::scoped_ptr<OpenCL_Handler> opencl_handler(new OpenCL_Handler);
     const unsigned int NB_SIZE = 2500;
-#else
+#else  // OPENCL
     const unsigned int NB_SIZE = 80;
-#endif
+#endif  // OPENCL
 
     double net_charge = 0.0;
 
@@ -593,17 +574,18 @@ void Mesh::init_energy_precalcs()
     Vector centre;
     double edge_length;
     get_bounding_cube(centre, edge_length);
-    boost::scoped_ptr<fmm::FMM_Octree_6FIG_ACCURACY> fmm(new fmm::FMM_Octree_6FIG_ACCURACY(NB_SIZE, centre, edge_length));
+    boost::scoped_ptr<fmm::FMM_Octree_6FIG_ACCURACY>
+		fmm(new fmm::FMM_Octree_6FIG_ACCURACY(NB_SIZE, centre, edge_length));
 
     // loop over each mesh instance and insert the charges into a big fat octree
-    for (std::vector<Charge>::const_iterator ch_it=charges.begin(), ch_end=charges.end();
-            ch_it != ch_end;
-            ++ch_it)
+    for (std::vector<Charge>::const_iterator
+			ch_it=charges.cbegin(), ch_end=charges.cend();
+		 ch_it != ch_end; ++ch_it)
     {
         const Charge& ch = *ch_it;
-        if (ch.charge != 0.0) {
-            fmm->add(ch);
-            net_charge += ch.charge;
+        if (ch.get_charge() != 0.0) {
+			fmm->add(ch);
+            net_charge += ch.get_charge();
         }
     }
 
@@ -612,17 +594,18 @@ void Mesh::init_energy_precalcs()
 
     // create list of evaluation points
     const size_t CHUNKSIZE = 10000; //64*1024;
-    boost::shared_array<fmm::EvalPt_2ndDerivs> eval_points(new fmm::EvalPt_2ndDerivs[CHUNKSIZE]);
-    assert(eval_points.get() != NULL);
+    boost::shared_array<fmm::EvalPt_2ndDerivs>
+		eval_points(new fmm::EvalPt_2ndDerivs[CHUNKSIZE]);
+    assert(eval_points.get() != nullptr);
     std::vector<fmm::EvalPt_2ndDerivs*> ep_vec;
     ep_vec.reserve(CHUNKSIZE);
 
     unsigned int patch_ctr=0;
-    std::vector<BasicNodePatch>::iterator it=node_patches.begin(), end=node_patches.end();
+    std::vector<BasicNodePatch>::iterator
+		it=node_patches.begin(), end=node_patches.end();
     double total_weight = 0.0;
 
-    while (it != end)
-    {
+    while (it != end) {
         ep_vec.clear();
         
         // this locks the energy quad points until we've finished with them
@@ -632,72 +615,87 @@ void Mesh::init_energy_precalcs()
         
         std::vector<BasicNodePatch>::iterator result_it=it;
         size_t ep_ctr=0;
-        boost::shared_ptr<QuadList> energy_quad_points = it->get_energy_quad_points();
-        for (; it != end && (ep_ctr + energy_quad_points->size()) < CHUNKSIZE; ++it)
+        boost::shared_ptr<QuadList> energy_quad_points
+			= it->get_energy_quad_points();
+        for (; it != end
+				&& (ep_ctr + energy_quad_points->size()) < CHUNKSIZE;
+			 ++it)
         {
-            eqp_cache.push_back(energy_quad_points); // prevent auto-deletion of quad points!
+			// prevent auto-deletion of quad points!
+            eqp_cache.push_back(energy_quad_points);
             
-            for (std::vector<QuadPoint>::const_iterator qp_it=energy_quad_points->begin(), qp_end=energy_quad_points->end(); qp_it != qp_end; ++qp_it)
+            for (std::vector<QuadPoint>::const_iterator
+					qp_it=energy_quad_points->cbegin(),
+					qp_end=energy_quad_points->cend();
+				 qp_it != qp_end; ++qp_it)
             {
                 eval_points[ep_ctr].reset();
                 eval_points[ep_ctr].pt() = Vector(qp_it->pt());
                 ++ep_ctr;
 
-                assert(ep_ctr < CHUNKSIZE); // otherwise we'll overrun our arrays
+				// avoid overrunning arrays
+                assert(ep_ctr < CHUNKSIZE);
             }
             
-            // have to do this here to provide peek-ahead of the energy_quad_points list
-            // (the list of quad points is generated on-demand, and only cached as long 
-            // as the pointer remains in existence, so need to prevent it dropping out
-            // of scope whilst we're using it... Slightly annoying I know, but otherwise
-            // we have to prestore all those pesky quad points and they actually add up
-            // to quite a lot of memory y'know.)
+            // have to do this here to provide peek-ahead of the
+            // energy_quad_points list (the list of quad points is generated
+            // on-demand, and only cached as long as the pointer remains in
+            // existence, so need to prevent it dropping out of scope whilst
+            // we're using it... Slightly annoying I know, but otherwise
+            // we have to prestore all those pesky quad points and they
+            // actually add up to quite a lot of memory y'know.)
             if (it+1 != end) {
                 energy_quad_points = (it+1)->get_energy_quad_points();
             }
         }
 
         //ep_vec.resize(ep_ctr);
-        for (size_t setter=0; setter < ep_ctr; ++setter)
-        {
+        for (size_t setter=0; setter < ep_ctr; ++setter) {
             ep_vec.push_back(&(eval_points[setter]));
         }
 
-        // evaluate the FMM at the evaluation points - results end up within the EvalPt struct
+        // evaluate the FMM at the evaluation points
+        // - results end up within the EvalPt struct
         // NB: this call may invoke some OpenCL stuff to speed it up
 #ifdef OPENCL
         fmm->evaluate_many(ep_vec, *opencl_handler);
 #else
         fmm->evaluate_many(ep_vec);
-#endif
+#endif  // OPENCL
 
         ep_ctr=0;
-        for (; result_it != it; ++result_it)
-        {
-            boost::shared_ptr<QuadList> quad_points = result_it->get_energy_quad_points();
+        for (; result_it != it; ++result_it) {
+            boost::shared_ptr<QuadList> quad_points
+				= result_it->get_energy_quad_points();
             result_it->energy_coefficient_f = 0;
             result_it->energy_coefficient_h = 0;
             KahanVector fres;
             KahanVector hres;
-            for (unsigned int ii=0; ii < quad_points->size(); ++ii)
-            {
+            for (unsigned int ii=0; ii < quad_points->size(); ++ii) {
                 const QuadPoint& qp = (*quad_points)[ii];
                 fmm::EvalPt_2ndDerivs& ep = eval_points[ep_ctr++];
 
-                result_it->energy_coefficient_f += ep.get_field().dot( qp.normal() ) * qp.weight() * ONE_OVER_4PI; // f coeff
-                result_it->energy_coefficient_h += ep.get_potential() * qp.weight() * ONE_OVER_4PI; // h coeff
+                result_it->energy_coefficient_f
+					+= ep.get_field().dot( qp.normal() ) * qp.weight()
+						* ONE_OVER_4PI;
+                result_it->energy_coefficient_h
+					+= ep.get_potential() * qp.weight() * ONE_OVER_4PI;
 
                 const GradField3x3& f2 = ep.get_field2();
 
-                double xx = Vector(f2(0,0), f2(0,1), f2(0,2)).dot( qp.normal() ) * qp.weight() * ONE_OVER_4PI; // f coeff
-                double yy = Vector(f2(1,0), f2(1,1), f2(1,2)).dot( qp.normal() ) * qp.weight() * ONE_OVER_4PI; // f coeff
-                double zz = Vector(f2(2,0), f2(2,1), f2(2,2)).dot( qp.normal() ) * qp.weight() * ONE_OVER_4PI; // f coeff
-
+				// f coeff
+                double xx = Vector(f2(0,0), f2(0,1), f2(0,2))
+							.dot( qp.normal() ) * qp.weight() * ONE_OVER_4PI;
+                double yy = Vector(f2(1,0), f2(1,1), f2(1,2))
+							.dot( qp.normal() ) * qp.weight() * ONE_OVER_4PI;
+                double zz = Vector(f2(2,0), f2(2,1), f2(2,2))
+							.dot( qp.normal() ) * qp.weight() * ONE_OVER_4PI;
                 fres += Vector(xx,yy,zz);
-                hres += ep.get_field() * qp.weight() * ONE_OVER_4PI; // h coeff
+
+				// h coeff
+                hres += ep.get_field() * qp.weight() * ONE_OVER_4PI;
 
                 total_weight += qp.weight();
-
             }
 
             result_it->force_coefficient_f = *fres;
@@ -715,26 +713,29 @@ void Mesh::init_energy_precalcs()
 
     // Done precalcs
     done_energy_precalcs = true;
-
-    return;
-    
 }
     
 void Mesh::renormalise_energy_precalcs()
 {
-    // Gauss Law says surface integral of E.n is equal to enclosed charge. Since E.n is the f_energy_coefficient,
-    // then the sum total_f should equal the net_charge calculated earlier.  Adjust the values to achieve equality.
+    // Gauss' Law says surface integral of E.n is equal to enclosed charge.
+    // Since E.n is the f_energy_coefficient, then the sum total_f should equal
+    // the net_charge calculated earlier. Adjust the values to achieve equality.
     double total_f=0;
-    for (std::vector<BasicNodePatch>::const_iterator np_it=node_patches.begin(), np_end=node_patches.end(); np_it != np_end; ++np_it)
+    for (std::vector<BasicNodePatch>::const_iterator
+			np_it=node_patches.cbegin(), np_end=node_patches.cend();
+		 np_it != np_end; ++np_it)
     {
         const BasicNodePatch& np = *np_it;
         total_f -= np.energy_coefficient_f;
     }
     double gauss_error = net_charge - total_f;
-    for (std::vector<BasicNodePatch>::iterator np_it=node_patches.begin(), np_end=node_patches.end(); np_it != np_end; ++np_it)
+    for (std::vector<BasicNodePatch>::iterator
+			np_it=node_patches.begin(), np_end=node_patches.end();
+		 np_it != np_end; ++np_it)
     {
         BasicNodePatch& np = *np_it;
-        np.energy_coefficient_f -= (np.get_bezier_area() / total_bezier_area)*gauss_error;
+        np.energy_coefficient_f
+			-= (np.get_bezier_area() / total_bezier_area) * gauss_error;
     }
     
 //     Vector zero_force(0,0,0);
@@ -750,34 +751,37 @@ void Mesh::renormalise_energy_precalcs()
 //         np.force_coefficient_h -= half_err / np.energy_coefficient_f;
 //         np.force_coefficient_f += half_err / np.energy_coefficient_h;
 //     }
-
-    return;
 }
 
-void Mesh::read_energy_precalcs(const std::string& energies_filename)
+void Mesh::read_energy_precalcs(
+	const fs::path& energies_filename)
 {
     // open the file
-    std::ifstream energies_file;
-    energies_file.open(energies_filename.c_str());
+    fs::ifstream energies_file;
+    energies_file.open(energies_filename);
     assert(energies_file.good());
 
-    for (std::vector<BasicNodePatch>::iterator it=node_patches.begin(), end=node_patches.end(); it != end; ++it)
+    for (std::vector<BasicNodePatch>::iterator
+			it=node_patches.begin(), end=node_patches.end();
+		 it != end; ++it)
     {
         BasicNodePatch& np = *it;
         energies_file >> np.energy_coefficient_f >> np.energy_coefficient_h 
-                      >> np.force_coefficient_f.x >> np.force_coefficient_f.y >> np.force_coefficient_f.z 
-                      >> np.force_coefficient_h.x >> np.force_coefficient_h.y >> np.force_coefficient_h.z;
+                      >> np.force_coefficient_f.x >> np.force_coefficient_f.y
+		              >> np.force_coefficient_f.z 
+                      >> np.force_coefficient_h.x >> np.force_coefficient_h.y
+		              >> np.force_coefficient_h.z;
     }
 
     energies_file.close();
     done_energy_precalcs = true;
-
 }
 
-KahanVector Mesh::calculate_qe_force(double Dprotein,
-                                double Dsolvent,
-                                const double fvals[],
-                                const double hvals[]) const
+KahanVector Mesh::calculate_qe_force(
+	double Dprotein,
+	double Dsolvent,
+	const double fvals[],
+	const double hvals[]) const
 {
     assert(done_energy_precalcs == true);
     
@@ -786,7 +790,9 @@ KahanVector Mesh::calculate_qe_force(double Dprotein,
     KahanVector qe_force; // this does compensated addition on the += operator
     unsigned int ctr=0;
     
-    for (std::vector<BasicNodePatch>::const_iterator nit=node_patches.begin(), nend=node_patches.end(); nit != nend; ++nit)
+    for (std::vector<BasicNodePatch>::const_iterator
+			nit=node_patches.cbegin(), nend=node_patches.cend();
+		 nit != nend; ++nit)
     {
         const BasicNodePatch& np = *nit;
         
@@ -795,25 +801,24 @@ KahanVector Mesh::calculate_qe_force(double Dprotein,
         qe_force -= np.force_coefficient_f*fvals[ctr];
         //std::cout << "forces: " << np.force_coefficient_f << " " << np.force_coefficient_h << " fh: " << fvals[ctr] << " " << hvals[ctr] << " qe: " << *qe_force << std::endl;
         ++ctr;
-        
     }
     
     qe_force *= beep_constants::convert_force_to_kJ_per_mol_Angstrom;
     return qe_force;
 }
 
-void Mesh::calculate_surface_integral_forces(double kappa,
-                                             double Dprotein,
-                                             double Dsolvent,
-                                             const double fvals[],
-                                             const double hvals[],
-                                             KahanVector& MST_external,
-                                             KahanVector& MST_internal,
-                                             KahanVector& dbf,
-                                             KahanVector& ionic) const
+void Mesh::calculate_surface_integral_forces(
+	double kappa,
+	double Dprotein,
+	double Dsolvent,
+	const double fvals[],
+	const double hvals[],
+	KahanVector& MST_external,
+	KahanVector& MST_internal,
+	KahanVector& dbf,
+	KahanVector& ionic) const
 {
-    for (unsigned int tctr=0; tctr < triangles.size(); ++tctr)
-    {
+    for (unsigned int tctr=0; tctr < triangles.size(); ++tctr) {
         // this may in fact be a PNG1, Bezier, or planar triangle
         // virtual function calls in calculate_force_components
         // will take advantage of the parametric representation of
@@ -838,19 +843,26 @@ void Mesh::calculate_surface_integral_forces(double kappa,
         
         //std::cout << "f/h vals over triangle: " << Vector(f1,f2,f3) << " " << Vector(h1,h2,h3) << std::endl;
 
-        calculate_force_components(tri, Vector(f1,f2,f3), Vector(h1,h2,h3), Dprotein, Dsolvent, kappa, BasicTriangle::gauss_legendre_pts_1(), 0, MST_external, MST_internal, dbf, ionic);
-
+        calculate_force_components(tri, Vector(f1,f2,f3), Vector(h1,h2,h3),
+			Dprotein, Dsolvent, kappa, BasicTriangle::gauss_legendre_pts_1(),
+			0, MST_external, MST_internal, dbf, ionic);
     }
     
     MST_external *= beep_constants::convert_force_to_kJ_per_mol_Angstrom;
     MST_internal *= beep_constants::convert_force_to_kJ_per_mol_Angstrom;
     dbf *= beep_constants::convert_force_to_kJ_per_mol_Angstrom;
     ionic *= beep_constants::convert_force_to_kJ_per_mol_Angstrom;
-    
-    return;
 }
 
-void Mesh::py_calculate_forces(double kappa, double Dprotein, double Dsolvent, Vector& qE, Vector& _MST_external, Vector& _MST_internal, Vector& _dbf, Vector& _ionic) const
+void Mesh::calculate_forces(
+	double kappa,
+	double Dprotein,
+	double Dsolvent,
+	Vector& qE,
+	Vector& _MST_external,
+	Vector& _MST_internal,
+	Vector& _dbf,
+	Vector& _ionic) const
 {
     assert(node_patches.size() == vertices.size());
 
@@ -863,7 +875,9 @@ void Mesh::py_calculate_forces(double kappa, double Dprotein, double Dsolvent, V
     double* hvals = new double[vertices.size()];
 
     size_t ctr=0;
-    for (std::vector<BasicNodePatch>::const_iterator it=node_patches.begin(), end=node_patches.end(); it != end; ++it)
+    for (std::vector<BasicNodePatch>::const_iterator
+			it=node_patches.cbegin(), end=node_patches.cend();
+		 it != end; ++it)
     {
         const BasicNodePatch& np = *it;
         fvals[ctr] = np.f;
@@ -872,7 +886,8 @@ void Mesh::py_calculate_forces(double kappa, double Dprotein, double Dsolvent, V
     }
 
     qE = *(calculate_qe_force(Dprotein, Dsolvent, fvals, hvals));
-    calculate_surface_integral_forces(kappa, Dprotein, Dsolvent, fvals, hvals, kMST_ext, kMST_int, kdbf, kionic);
+    calculate_surface_integral_forces(kappa, Dprotein, Dsolvent, fvals, hvals,
+	                                  kMST_ext, kMST_int, kdbf, kionic);
 
     _MST_external = *kMST_ext;
     _MST_internal = *kMST_int;
@@ -881,10 +896,12 @@ void Mesh::py_calculate_forces(double kappa, double Dprotein, double Dsolvent, V
     
     delete[] fvals;
     delete[] hvals;
-    return;
 }
 
-double Mesh::py_calculate_energy(double kappa, double Dprotein, double Dsolvent) const
+double Mesh::calculate_energy(
+	double kappa,
+	double Dprotein,
+	double Dsolvent) const
 {
     assert(node_patches.size() == vertices.size());
 
@@ -892,7 +909,9 @@ double Mesh::py_calculate_energy(double kappa, double Dprotein, double Dsolvent)
     double* hvals = new double[vertices.size()];
 
     size_t ctr=0;
-    for (std::vector<BasicNodePatch>::const_iterator it=node_patches.begin(), end=node_patches.end(); it != end; ++it)
+    for (std::vector<BasicNodePatch>::const_iterator
+			it=node_patches.cbegin(), end=node_patches.cend();
+		 it != end; ++it)
     {
         const BasicNodePatch& np = *it;
         fvals[ctr] = np.f;
@@ -908,11 +927,12 @@ double Mesh::py_calculate_energy(double kappa, double Dprotein, double Dsolvent)
     return retval;
 }
 
-double Mesh::calculate_energy(double kappa,
-                              double Dprotein,
-                              double Dsolvent,
-                              const double fvals[],
-                              const double hvals[]) const
+double Mesh::calculate_energy(
+	double kappa,
+	double Dprotein,
+	double Dsolvent,
+	const double fvals[],
+	const double hvals[]) const
 {
 
     assert(done_energy_precalcs == true);
@@ -922,43 +942,42 @@ double Mesh::calculate_energy(double kappa,
     double energy=0.0;
     double kahan=0.0;
 
-    for (unsigned int ctr=0; ctr < num_patches; ++ctr)
-    {
+    for (unsigned int ctr=0; ctr < num_patches; ++ctr) {
         const BasicNodePatch& np = node_patches[ctr];
         const double& f = fvals[ctr];
         const double& h = hvals[ctr];
 
-        {
-            double energy_frag = (h*epsilon_ratio*np.energy_coefficient_h - f*np.energy_coefficient_f);
+        {  // New scope
+            double energy_frag = (h*epsilon_ratio*np.energy_coefficient_h
+								  - f*np.energy_coefficient_f);
             double y = energy_frag - kahan;
             double t = energy + y;
             kahan = (t - energy) - y;
             energy = t;
-        }
+        }  // End scope
     }
 
     return energy * 0.5 * beep_constants::convert_energy_to_kj_per_mol;
 }
 
-std::string Mesh::kinemage_node_patches() const
-{
+std::string Mesh::kinemage_node_patches() const {
     std::ostringstream buf;
     buf << "@vectorlist {patch_edges} off\n";
-    for (std::vector<Vertex>::const_iterator it=vertices.begin(), end=vertices.end(); it != end; ++it)
+    for (std::vector<Vertex>::const_iterator
+			it=vertices.cbegin(), end=vertices.cend();
+		 it != end; ++it)
     {
         buf << it->kinemage_edges(triangles);
         break;
     }
     
     buf << "@trianglelist {node_patches}\n";
-    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr)
-    {
+    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr) {
         const Vertex& v = vertices[np_ctr];
 
-        for (std::vector<unsigned int>::const_iterator it=v.triangle_indices.begin(),
-            end=v.triangle_indices.end();
-            it != end;
-            ++it)
+        for (std::vector<unsigned int>::const_iterator
+				it=v.triangle_indices.cbegin(), end=v.triangle_indices.cend();
+             it != end; ++it)
         {
             const Triangle& tri = triangles[*it];
 
@@ -973,44 +992,44 @@ std::string Mesh::kinemage_node_patches() const
 
                 // kinemage a quadrilateral with the fh values
                 buf << "X " << v.x << " " << v.y << " " << v.z << " "
-                            << mid_a.x << " " << mid_a.y << " " << mid_a.z << " "
-                            << centre.x << " " << centre.y << " " << centre.z << "\n";
+                    << mid_a.x << " " << mid_a.y << " " << mid_a.z << " "
+                    << centre.x << " " << centre.y << " " << centre.z << "\n";
                 buf << "X " << v.x << " " << v.y << " " << v.z << " "
-                            << centre.x << " " << centre.y << " " << centre.z << " "
-                            << mid_b.x << " " << mid_b.y << " " << mid_b.z << "\n";
+                    << centre.x << " " << centre.y << " " << centre.z << " "
+                    << mid_b.x << " " << mid_b.y << " " << mid_b.z << "\n";
             }
             catch (Vertex::BadVertex &bv) {
-                std::cout << "Vertex " << v << " not a member of Triangle " << tri << ".  Puzzling ... " << std::endl;
+                std::cout << "Vertex " << v << " not a member of Triangle "
+			              << tri << ".  Puzzling ... " << std::endl;
             }
         }
         break;
     }
     
     buf << "@vectorlist {qual_pts} color=grey off\n";
-    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr)
-    {
-        boost::shared_ptr<QuadList> qual_pts = node_patches[np_ctr].get_qualocation_points();
-        for (QuadList::const_iterator it=qual_pts->begin(),
-            end=qual_pts->end();
-            it != end;
-            ++it)
+    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr) {
+        boost::shared_ptr<QuadList> qual_pts
+			= node_patches[np_ctr].get_qualocation_points();
+        for (QuadList::const_iterator
+				it=qual_pts->cbegin(), end=qual_pts->cend();
+             it != end; ++it)
         {
             const QuadPoint& qp = *it;
             Vector a = qp.pt();
             Vector b = a + qp.normal() * qp.weight();
-            buf << "{}P " << a.x << " " << a.y << " " << a.z << " " << b.x << " " << b.y << " " << b.z << "\n";
+            buf << "{}P " << a.x << " " << a.y << " " << a.z << " "
+			              << b.x << " " << b.y << " " << b.z << "\n";
         }
         break;
     }
     
     buf << "@spherelist {qual_pts_spheres} color=blue off\n";
-    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr)
-    {
-        boost::shared_ptr<QuadList> qual_pts = node_patches[np_ctr].get_qualocation_points();
-        for (QuadList::const_iterator it=qual_pts->begin(),
-            end=qual_pts->end();
-            it != end;
-            ++it)
+    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr) {
+        boost::shared_ptr<QuadList> qual_pts
+			= node_patches[np_ctr].get_qualocation_points();
+        for (QuadList::const_iterator
+				it=qual_pts->cbegin(), end=qual_pts->cend();
+             it != end; ++it)
         {
             const QuadPoint& qp = *it;
             Vector a = qp.pt();
@@ -1022,11 +1041,11 @@ std::string Mesh::kinemage_node_patches() const
     buf << "@spherelist {quad_pts_spheres} color=blue off\n";
     for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr)
     {
-        boost::shared_ptr<QuadList> quad_pts = node_patches[np_ctr].get_quadrature_points();
-        for (QuadList::const_iterator it=quad_pts->begin(),
-            end=quad_pts->end();
-            it != end;
-            ++it)
+        boost::shared_ptr<QuadList> quad_pts
+			= node_patches[np_ctr].get_quadrature_points();
+        for (QuadList::const_iterator
+				it=quad_pts->cbegin(), end=quad_pts->cend();
+             it != end; ++it)
         {
             const QuadPoint& qp = *it;
             Vector a = qp.pt();
@@ -1036,18 +1055,18 @@ std::string Mesh::kinemage_node_patches() const
     }
     
     buf << "@vectorlist {quad_pts} color=grey off\n";
-    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr)
-    {
-        boost::shared_ptr<QuadList> quad_pts = node_patches[np_ctr].get_quadrature_points();
-        for (QuadList::const_iterator it=quad_pts->begin(),
-            end=quad_pts->end();
-            it != end;
-            ++it)
+    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr) {
+        boost::shared_ptr<QuadList> quad_pts
+			= node_patches[np_ctr].get_quadrature_points();
+        for (QuadList::const_iterator
+				it=quad_pts->cbegin(), end=quad_pts->cend();
+             it != end; ++it)
         {
             const QuadPoint& qp = *it;
             Vector a = qp.pt();
             Vector b = a + qp.normal() * fabs(qp.weight());
-            buf << "{}P " << a.x << " " << a.y << " " << a.z << " " << b.x << " " << b.y << " " << b.z << "\n";
+            buf << "{}P " << a.x << " " << a.y << " " << a.z << " "
+			              << b.x << " " << b.y << " " << b.z << "\n";
         }
         break;
     }
@@ -1055,7 +1074,10 @@ std::string Mesh::kinemage_node_patches() const
     return buf.str();
 }
 
-std::string Mesh::kinemage_fh_vals(double fscale, double hscale, int num_colours) const
+std::string Mesh::kinemage_fh_vals(
+	double fscale,
+	double hscale,
+	int num_colours) const
 {
     std::ostringstream buf_f;
     std::ostringstream buf_h;
@@ -1063,16 +1085,16 @@ std::string Mesh::kinemage_fh_vals(double fscale, double hscale, int num_colours
     buf_f << "@trianglelist {fvals}\n";
     buf_h << "@trianglelist {hvals} off\n";
 
-    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr)
-    {
+    for (size_t np_ctr=0; np_ctr < node_patches.size(); ++np_ctr) {
         const BasicNodePatch& np = node_patches[np_ctr];
         const Vertex& v = vertices[np_ctr];
         std::string f_name;
         std::string h_name;
 
-        {
+        {  // New scope
             std::stringstream s;
-            int f_idx = static_cast<int>(round(static_cast<double>(num_colours)*np.f / fscale));
+            int f_idx = static_cast<int>
+					(round(static_cast<double>(num_colours)*np.f / fscale));
             if (f_idx < 1){
                 f_idx = abs(f_idx);
                 int fcol = f_idx <= num_colours ? f_idx : num_colours+1;
@@ -1082,11 +1104,12 @@ std::string Mesh::kinemage_fh_vals(double fscale, double hscale, int num_colours
                 s << "blue" << "_" << fcol;
             }
             f_name = s.str();
-        }
+        }  // End scope
 
-        {
+        {  // New scope
             std::stringstream s;
-            int h_idx = static_cast<int>(round(static_cast<double>(num_colours)*np.h / hscale));
+            int h_idx = static_cast<int>
+					(round(static_cast<double>(num_colours)*np.h / hscale));
             if (h_idx < 1){
                 h_idx = abs(h_idx);
                 int hcol = h_idx <= num_colours ? h_idx : num_colours+1;
@@ -1096,12 +1119,11 @@ std::string Mesh::kinemage_fh_vals(double fscale, double hscale, int num_colours
                 s << "blue" << "_" << hcol;
             }
             h_name = s.str();
-        }
+        }  // End scope
 
-        for (std::vector<unsigned int>::const_iterator it=v.triangle_indices.begin(),
-            end=v.triangle_indices.end();
-            it != end;
-            ++it)
+        for (std::vector<unsigned int>::const_iterator
+				it=v.triangle_indices.cbegin(), end=v.triangle_indices.cend();
+             it != end; ++it)
         {
             const Triangle& tri = triangles[*it];
 
@@ -1116,26 +1138,27 @@ std::string Mesh::kinemage_fh_vals(double fscale, double hscale, int num_colours
 
                 // kinemage a quadrilateral with the fh values
                 buf_f << "X " << v.x << " " << v.y << " " << v.z << " "
-                            << mid_a.x << " " << mid_a.y << " " << mid_a.z << " "
-                            << f_name << " "
-                            << centre.x << " " << centre.y << " " << centre.z << "\n";
+                      << mid_a.x << " " << mid_a.y << " " << mid_a.z << " "
+                      << f_name << " "
+                      << centre.x << " " << centre.y << " " << centre.z << "\n";
                 buf_f << "X " << v.x << " " << v.y << " " << v.z << " "
-                            << centre.x << " " << centre.y << " " << centre.z << " "
-                            << f_name << " "
-                            << mid_b.x << " " << mid_b.y << " " << mid_b.z << "\n";
+                      << centre.x << " " << centre.y << " " << centre.z << " "
+                      << f_name << " "
+                      << mid_b.x << " " << mid_b.y << " " << mid_b.z << "\n";
 
                 // kinemage a quadrilateral with the fh values
                 buf_h << "X " << v.x << " " << v.y << " " << v.z << " "
-                            << mid_a.x << " " << mid_a.y << " " << mid_a.z << " "
-                            << h_name << " "
-                            << centre.x << " " << centre.y << " " << centre.z << "\n";
+                      << mid_a.x << " " << mid_a.y << " " << mid_a.z << " "
+                      << h_name << " "
+                      << centre.x << " " << centre.y << " " << centre.z << "\n";
                 buf_h << "X " << v.x << " " << v.y << " " << v.z << " "
-                            << centre.x << " " << centre.y << " " << centre.z << " "
-                            << h_name << " "
-                            << mid_b.x << " " << mid_b.y << " " << mid_b.z << "\n";
+                      << centre.x << " " << centre.y << " " << centre.z << " "
+                      << h_name << " "
+                      << mid_b.x << " " << mid_b.y << " " << mid_b.z << "\n";
             }
             catch (Vertex::BadVertex &bv) {
-                std::cout << "Vertex " << v << " not a member of Triangle " << tri << ".  Puzzling ... " << std::endl;
+                std::cout << "Vertex " << v << " not a member of Triangle "
+				          << tri << ".  Puzzling ... " << std::endl;
             }
         }
     }
@@ -1143,6 +1166,74 @@ std::string Mesh::kinemage_fh_vals(double fscale, double hscale, int num_colours
     buf_f << buf_h.str();
 
     return buf_f.str();
+}
+
+void Mesh::create_node_patches() {
+	node_patches.reserve(vertices.size());
+
+	double planar_area = 0;
+	total_bezier_area = 0.0;
+int i = 0;
+	for (std::vector<BasicTriangle*>::const_iterator
+			it=triangle_ptrs.cbegin(), end=triangle_ptrs.cend();
+		 it != end; ++it)
+	{
+i++;
+		planar_area += (**it).get_planar_area();
+		total_bezier_area += (**it).get_area();
+	}
+
+	// instantiates umbrella-shaped Node Patches
+	unsigned int ctr=0;
+i = 0;
+	for (std::vector<Vertex>::iterator it=vertices.begin(), end=vertices.end();
+		 it != end; ++it)
+	{
+i++;
+		node_patches.push_back(BasicNodePatch(ctr++,*this));
+	}
+
+	std::cout << "Planar area: " << total_planar_area
+	          << " vs. bezier area: " << total_bezier_area << std::endl;
+}
+
+Vector Mesh::calculate_charges_centroid() {
+	Vector sum(0,0,0);
+	if (charges.size() > 0) {
+		// iterate over all charges and find centre
+		for (std::vector<Charge>::const_iterator
+				chit=charges.cbegin(), chend=charges.cend();
+			 chit != chend; ++chit)
+		{
+			sum += chit->position();
+		}
+
+		sum /= charges.size();
+	}
+
+	return sum;
+}
+
+Vector Mesh::calculate_patches_centroid() {
+	Vector centroid(0,0,0);
+	for (std::vector<BasicNodePatch>::const_iterator
+			np_it=node_patches.cbegin(), np_end=node_patches.cend();
+		 np_it != np_end; ++np_it)
+	{
+		const BasicNodePatch& np = *np_it;
+		centroid += np.get_centroid() * np.get_bezier_area();            
+	}
+	
+	if (total_bezier_area > 0) {
+		centroid /= total_bezier_area;
+	}
+	else {
+		std::cerr << "Error: Surface area of the mesh appears to be zero!"
+		          << std::endl;
+		throw std::exception();
+	}
+	
+	return centroid;
 }
 
 
@@ -1343,5 +1434,25 @@ Vector Mesh::calc_reaction_field_force(const Offsets& offs,
 
     return force*ONE_OVER_4PI;
 }
-#endif
+#endif // if 0
+
+#ifndef __DELETED__
+// Add a mesh to the list
+boost::shared_ptr<ListedMesh>
+MeshList::add(const std::string& filename, bool force_planar)
+{
+	// add mesh to library
+	boost::shared_ptr<ListedMesh>
+		mesh_ptr(new ListedMesh(size(), filename, force_planar));
+	push_back( mesh_ptr );
+	return mesh_ptr;
+}
+
+void MeshList::reset_energy_precalcs() {
+    for (MeshList::iterator mit=begin(), mend=end(); mit != mend; ++mit) {
+		(**mit).init_energy_precalcs();
+    }
+}
+#endif // ! __DELETED__
+
 

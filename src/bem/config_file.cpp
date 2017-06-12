@@ -22,6 +22,8 @@
 #include <boost/filesystem.hpp>
 #endif
 
+namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
+
 // Use the TinyXML library for XML parsing -- see external folder for details
 #include "../external/tinyxml/tinyxml.h"
 
@@ -29,13 +31,6 @@ const std::string ConfigFile::XML_CONFIG_ROOT_ELEMENT = "BEM_Config";
 
 void ConfigFile::init(const std::string& filename)
 {
-    
-#if BOOST_VERSION < 103400
-    std::string root_path = boost::filesystem::path(filename).branch_path().string() + "/";
-#else
-    std::string root_path = boost::filesystem::path(filename).parent_path().string() + "/";
-#endif
-    
     
     // Open the xml config file and parse it
     // Populate the ConfigFile members from the xml
@@ -139,7 +134,7 @@ void ConfigFile::init(const std::string& filename)
                 std::cerr << "Mesh id's must correspond to ordering within <library> block," << std::endl;
                 throw ParseException();
             }
-            mesh_library.push_back(CFG_MeshDescription(root_path + std::string(pText), id));
+            mesh_library.push_back(CFG_MeshDescription(std::string(pText), id));
 
         }
     }

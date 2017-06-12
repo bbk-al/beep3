@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from libBEEP import *
 
@@ -10,7 +10,7 @@ def test_force_on_planar_triangle():
     n2 = Vector(0,0,1)
     n3 = Vector(0,0,1)
     h=HybridBezierTriangle(v1,n1,v2,n2,v3,n3)
-    print h.calculate_force(Vector(0,0,0),Vector(1,1,1),0)
+    print(h.calculate_force(Vector(0,0,0),Vector(1,1,1),0))
 
 if __name__=="__main__":
 
@@ -52,8 +52,8 @@ if __name__=="__main__":
     
     qe_force *= constants.force_conversion_picoNewtons
 
-    print "Total energy: ", energy * 0.5 * constants.convert_energy_to_kj_per_mol
-    print "Total qE force: ", qe_force
+    print("Total energy: ", energy * 0.5 * constants.convert_energy_to_kj_per_mol)
+    print("Total qE force: ", qe_force)
 
     def trial():
         #normalisation = sqrt(k_para**2 + k_para**2 + k_perp**2)
@@ -111,9 +111,9 @@ if __name__=="__main__":
 
     force = trial() * constants.force_conversion_picoNewtons
  
-    print "boundary force: ", force
+    print("boundary force: ", force)
     force += qe_force
-    print force, force.length()
+    print(force, force.length())
     #break
 
 

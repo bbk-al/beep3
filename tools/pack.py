@@ -3,7 +3,6 @@
 from pybeep import Vector
 from geometry import _rand_rot, _rand_xyz
 import sys
-from string import atoi
 from math import pi, ceil
 
 def pack(crowdant_radius, volume_fraction, distance_limit, forbidden, minimum_separation):
@@ -54,11 +53,11 @@ def pack(crowdant_radius, volume_fraction, distance_limit, forbidden, minimum_se
     #print
 
     final_vol_fraction = num_added * individual_vol / volume
-    print "Added %d crowders, reached volume fraction of %f" %(num_added, final_vol_fraction)
+    print("Added %d crowders, reached volume fraction of %f" %(num_added, final_vol_fraction))
     
     centres = centres[len(forbidden):]
     
-    print "Culling anything further than %f from the forbidden range" %(distance_limit)
+    print("Culling anything further than %f from the forbidden range" %(distance_limit))
     
     # utility function- returns true if the point/radius is further than
     # distance_limit from any object in forbidden (NB: could use lambda
@@ -70,6 +69,6 @@ def pack(crowdant_radius, volume_fraction, distance_limit, forbidden, minimum_se
     # cull using list comprehension
     centres = [x for x,r in centres if cull_function(x,r)]
     
-    print "%d crowders remain" %(len(centres))
+    print("%d crowders remain" %(len(centres)))
     
     return centres

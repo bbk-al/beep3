@@ -1,9 +1,9 @@
-/*
-* mesh_tarball.h
-*
-*  Created on: 26 Jul 2010
-*      Author: david
-*/
+/*      Author: david fallaize    Created on: 26 Jul 2010 */
+
+/*! \file mesh_tarball.h
+ * \brief This module declares the mesh tarball class providing utilities
+ * for reading compressed tar files containing mesh files.
+ */
 
 #ifndef MESH_TARBALL_H_
 #define MESH_TARBALL_H_
@@ -20,59 +20,64 @@
 #else
 #define BOOST_FILESYSTEM_VERSION 3
 #include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>  // Not needed by 1.62.0
 #endif
 
-class mesh_tarball {
+#define __DELETED__
+
+namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
+
+class MeshTarball {
 
 public:
 
+    MeshTarball() : mtz_filename("") {}
+	MeshTarball(const std::string& filename)
+    : mtz_filename{filename},
+	  work_dir {fs::temp_directory_path().string()
+				+ work_dir.preferred_separator
+				+ fs::unique_path("beep-%%%%%%%%%%").string()}
+	{
+		init();
+	}
 
-    mesh_tarball() : mtz_filename("") {}
-    mesh_tarball(const std::string& filename);
-    virtual ~mesh_tarball();
+    virtual ~MeshTarball();
 
-    void init(const std::string& filename);
-
-    class Mesh_TarBall_Exception : public std::exception
+    class MeshTarball_Exception : public std::exception
     {
     public:
-        Mesh_TarBall_Exception() : std::exception() {}
+        MeshTarball_Exception() : std::exception() {}
 
     };
 
     // these are mandatory elements
-    inline std::string prepend_work_dir(const std::string& filename) const {
-        if (filename.empty()) { throw Mesh_TarBall_Exception(); }
-        return work_dir + "/" + filename;
-    }
-    inline std::string get_xyzqr_filename() const { return prepend_work_dir(xyzqr_filename); }
-    inline std::string get_mesh_filename() const { return prepend_work_dir(mesh_filename); }
-    inline std::string get_centre_filename() const { return prepend_work_dir(centre_filename); }
-    inline std::string get_energies_filename() const { return prepend_work_dir(energies_filename); }
-    inline std::string get_fh_filename() const 
-    { 
-        if (fh_filename.empty()) {
-            return ""; 
-        }
-        return prepend_work_dir(fh_filename); 
-    };
-    
-    inline std::string get_ecm_filename() const
-    {
-        if (ecm_filename.empty()) {
-            return ""; 
-        }
-        return prepend_work_dir(ecm_filename); 
+    fs::path get_xyzqr_filename() const {
+		return prepend_work_dir(xyzqr_filename);
+	}
+    fs::path get_centre_filename() const {
+		return prepend_work_dir(centre_filename);
+	}
+    fs::path get_energies_filename() const {
+		return prepend_work_dir(energies_filename);
+	}
+    fs::path get_mesh_filename() const {
+		return prepend_work_dir(mesh_filename);
+	}
+	fs::path get_fh_filename() const { return prepend_work_dir(fh_filename); }
+	fs::path get_ecm_filename() const { return prepend_work_dir(ecm_filename); }
 
-    };
 
 private:
+    inline fs::path prepend_work_dir(const std::string& filename) const;
 
-    std::string mtz_filename;
-    std::string work_dir;
+    void init();
     void extract(const std::string& filename);
     int  copy_data(struct archive *ar, struct archive *aw);
     void parse_definition_xml();
+
+	// Attributes
+    std::string mtz_filename;
+	fs::path work_dir;
 
     // compulsory elements
     static const std::string MESH_DEFINITION_XML;
@@ -103,7 +108,16 @@ private:
     std::string diff_tensor_filename;
     std::string ellipsoid_filename;
     std::string ecm_filename;
-
 };
+
+// inlined methods
+inline fs::path
+MeshTarball::prepend_work_dir(const std::string& filename) const
+{
+	if (filename.empty()) { throw MeshTarball_Exception(); }
+	fs::path rv{work_dir};
+	rv /= fs::path{filename};
+	return rv;
+}
 
 #endif /* MESH_TARBALL_H_ */

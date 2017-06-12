@@ -37,6 +37,7 @@
 ## configure
 .deps
 .libs
+autom4te.cache
 
 
 ## CUDA

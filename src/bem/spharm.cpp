@@ -48,6 +48,7 @@ double SpharmHolder::Ynm_dphi(int n, int m, double cos_theta, double phi)
 void SpharmHolder::Ynm_dtheta(int nmax, double cos_theta, double sin_theta, double phi, SpharmHolder& holder)
 {
     assert(nmax >= 0);
+#ifdef __PRE_GSL20__
     double *result_array = new double[(nmax+1)*(nmax+1)];
     double *result_deriv_array = new double[(nmax+1)*(nmax+1)];
 
@@ -72,6 +73,31 @@ void SpharmHolder::Ynm_dtheta(int nmax, double cos_theta, double sin_theta, doub
             }
         }
     }
+#else //  __PRE_GSL20__
+    double *result_array = new double[gsl_sf_legendre_array_n(nmax)];
+    double *result_deriv_array = new double[gsl_sf_legendre_array_n(nmax)];
+	double val;
+
+	gsl_sf_legendre_deriv_array_e(GSL_SF_LEGENDRE_SPHARM, nmax, cos_theta,
+									-1, result_array, result_deriv_array);
+	for (int nctr=0; nctr <= nmax; ++nctr) {
+		holder(nctr, 0) = result_deriv_array
+									[gsl_sf_legendre_array_index(nctr,0)]
+								* root2 * -sin_theta;
+        std::cout << nctr << " " << 0 << " "
+				<< result_deriv_array[gsl_sf_legendre_array_index(nctr,0)]
+								* root2 * -sin_theta
+				<< std::endl;
+	}
+	for (int m=1; m <= nmax; ++m) {
+		for (int nctr=m; nctr <= nmax; ++nctr) {
+			val = result_deriv_array[gsl_sf_legendre_array_index(nctr,m)]
+					* root2 * -sin_theta;
+			holder(nctr, m) = val * cos(phi*m);
+			holder(nctr, -m) = val * sin(phi*m);
+		}
+	}
+#endif //  __PRE_GSL20__
 
     delete[] result_array;
     delete[] result_deriv_array;
@@ -123,7 +149,7 @@ Vector SpharmHolder::dtheta(const Vector& pt, const Vector& origin) const
 {
     SpharmPt sp(pt, origin);
     double val = 0.0;
-    std::auto_ptr<SpharmHolder> tmp_ptr(new SpharmHolder(max_n));
+    std::unique_ptr<SpharmHolder> tmp_ptr(new SpharmHolder(max_n));
     SpharmHolder& tmp = *tmp_ptr;
     Ynm_dtheta(static_cast<int>(max_n), sp.cos_theta, sp.sin_theta, sp.phi, tmp);
 
@@ -231,7 +257,7 @@ SpharmHolder least_squares_spherical_harmonic_pylist(const boost::python::list& 
     assert(len(pts) == len(vals));
 
     // n is max order of spherical harmonic to combine to approximate the function at the sample_pts
-    std::auto_ptr<SpharmHolder> spharm_ptr(new SpharmHolder(n));
+    std::unique_ptr<SpharmHolder> spharm_ptr(new SpharmHolder(n));
     SpharmHolder& spharm = *spharm_ptr;
 
     // check that the number of parameters to fit is smaller than the number of constraints

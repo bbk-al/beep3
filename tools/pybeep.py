@@ -3,8 +3,6 @@ from ctypes import *
 cpp = CDLL("libstdc++.so.6", mode=RTLD_GLOBAL | RTLD_LOCAL)
 from libBEEP import _Charge, _Mesh, _MeshInstance, _BEEP, BasicTriangle, _Vector, Quaternion, Octree, NodePatchTree
 
-from string import atof
-
 class Charge(_Charge, object):
     
     def __init__(self, *args):
@@ -25,7 +23,7 @@ class Charge(_Charge, object):
         f = open(filename, 'r')
         for line in f.readlines():
             try:
-                bits = [atof(xx) for xx in line.split()]
+                bits = [float(xx) for xx in line.split()]
                 charge_list.append(Charge(Vector(bits[0],bits[1],bits[2]), bits[3], bits[4]))
             except:
                 pass
@@ -34,7 +32,7 @@ class Charge(_Charge, object):
         return charge_list
 
     def __str__(self):
-        print self.position()
+        print(self.position())
         
 class Vector(_Vector, object):
     
@@ -72,25 +70,25 @@ class Mesh(_Mesh, object):
     # generator function to provide triangle iterator
     @property
     def triangles(self):
-        for x in xrange(self.num_triangles):
+        for x in range(self.num_triangles):
             yield self.get_triangle(x)
 
     # generator function to provide node patch iterator
     @property
     def node_patches(self):
-        for x in xrange(self.num_node_patches):
+        for x in range(self.num_node_patches):
             yield self.get_node_patch(x)
 
     # generator function to provide vertex iterator
     @property
     def vertices(self):
-        for x in xrange(self.num_vertices):
+        for x in range(self.num_vertices):
             yield self.get_vertex(x)
 
     # generator function to provide charge iterator
     @property
     def charges(self):
-        for x in xrange(self.num_charges):
+        for x in range(self.num_charges):
             yield self.get_charge(x)
 
     def kinemage(self, filename="mesh.kin"):
@@ -143,7 +141,7 @@ class Mesh(_Mesh, object):
             output.append("r=%f {} %f %f %f" %(ch.radius,x,y,z))
 
         f = open(filename, 'w')
-        print >>f, "\n".join(output)
+        print("\n".join(output), file=f)
         f.close()
 
         return
@@ -154,7 +152,7 @@ class Mesh(_Mesh, object):
             for k in self.entity_mappings.keys():
                 sph = self.get_spherical_harmonic_approx_h(self.entity_mappings[k])
                 flux = self.calculate_net_flux(self.entity_mappings[k], epsilon, sph)
-                print "Flux on mesh %d = %f" %(k, flux)
+                print("Flux on mesh %d = %f" %(k, flux))
         except AttributeError:
             pass
 
@@ -175,12 +173,12 @@ class Mesh(_Mesh, object):
                                                kappa,
                                                Dint,
                                                Dext) * con
-                print "Solvation energy for mesh %d = %f" %(k, energy)
+                print("Solvation energy for mesh %d = %f" %(k, energy))
 
         except AttributeError:
             # for meshes with no entity mapping of object to node patch range
             energy = self.calculate_energy_whole_mesh(kappa, Dint, Dext) * con
-            print "Solvation energy = %f" %(energy)
+            print("Solvation energy = %f" %(energy))
 
         return
 
@@ -240,7 +238,7 @@ class Mesh(_Mesh, object):
                                                       Dext,
                                                       sph_h)
 
-            print "Net reaction field force on charges for mesh %d = %s" %(k, rf_force )
+            print("Net reaction field force on charges for mesh %d = %s" %(k, rf_force))
 
             return rf_force
             #yield self.get_triangle(x)
@@ -248,19 +246,19 @@ class Mesh(_Mesh, object):
     # generator function to provide node patch iterator
     @property
     def node_patches(self):
-        for x in xrange(self.num_node_patches):
+        for x in range(self.num_node_patches):
             yield self.get_node_patch(x)
 
     # generator function to provide node patch iterator
     @property
     def vertices(self):
-        for x in xrange(self.num_vertices):
+        for x in range(self.num_vertices):
             yield self.get_vertex(x)
 
     # generator function to provide charge iterator
     @property
     def charges(self):
-        for x in xrange(self.num_charges):
+        for x in range(self.num_charges):
             yield self.get_charge(x)
 
     def write_nodes(self, nodes_filename):
@@ -268,21 +266,21 @@ class Mesh(_Mesh, object):
         
         nodes = open(nodes_filename, 'w')
         for np in self.node_patches:
-            print >>nodes, np.node(), \
-                            np.centroid(), \
-                            np.normal(), \
-                            np.alt_normal(), \
-                            np.gc, \
-                            np.planar_area(), \
-                            np.bezier_area(), \
-                            np.weighted_area(),\
-                            np.num_quad_points(), \
-                            np.energy_coefficient_f, \
-                            np.energy_coefficient_h, \
-                            np.force_coefficient_f, \
-                            np.force_coefficient_h, \
-                            np.f, \
-                            np.h
+            print(np.node(), \
+                  np.centroid(), \
+                  np.normal(), \
+                  np.alt_normal(), \
+                  np.gc, \
+                  np.planar_area(), \
+                  np.bezier_area(), \
+                  np.weighted_area(),\
+                  np.num_quad_points(), \
+                  np.energy_coefficient_f, \
+                  np.energy_coefficient_h, \
+                  np.force_coefficient_f, \
+                  np.force_coefficient_h, \
+                  np.f, \
+                  np.h, file=nodes)
         nodes.close()
         return
     
@@ -292,7 +290,7 @@ class Mesh(_Mesh, object):
         quads = open(quads_filename, 'w')
         for np in self.node_patches:
             for ii in range(np.num_quad_points()):
-                print >>quads, np.get_quad_point(ii)
+                print(np.get_quad_point(ii), file=quads)
         quads.close()
         return
 
@@ -307,7 +305,7 @@ class Mesh(_Mesh, object):
             hx = np.force_coefficient_h.x
             hy = np.force_coefficient_h.y
             hz = np.force_coefficient_h.z
-            print >>energies, "%2.16e %2.16e %2.16e %2.16e %2.16e %2.16e %2.16e %2.16e" %(np.energy_coefficient_f, np.energy_coefficient_h, fx, fy, fz, hx, hy, hz)
+            print("%2.16e %2.16e %2.16e %2.16e %2.16e %2.16e %2.16e %2.16e" %(np.energy_coefficient_f, np.energy_coefficient_h, fx, fy, fz, hx, hy, hz), file=energies)
 
         energies.close()
         return
@@ -320,13 +318,13 @@ class MeshInstance(_MeshInstance, object):
     # generator function to provide node patch iterator
     @property
     def node_patches(self):
-        for x in xrange(self.num_node_patches):
+        for x in range(self.num_node_patches):
             yield self.get_node_patch(x)
     
     # generator function to provide charge iterator     
     @property
     def charges(self):
-        for x in xrange(self.num_charges):
+        for x in range(self.num_charges):
             yield self.get_charge(x)
 
     @property
@@ -341,13 +339,13 @@ class BEEP(_BEEP, object):
     # generator function to provide node patch iterator
     @property
     def node_patches(self):
-        for x in xrange(self.num_node_patches):
+        for x in range(self.num_node_patches):
             yield self.get_patch(x)
             
     # generator function to provide mesh
     @property
     def mesh_instances(self):
-        for x in xrange(self.num_mesh_instances):
+        for x in range(self.num_mesh_instances):
             yield MeshInstance(self.get_mesh_instance(x))
 
     # generator function to provide mesh
@@ -359,14 +357,14 @@ class BEEP(_BEEP, object):
         import kintools
         from math import fabs
         
-        print "Writing %s ... " %(filename),
+        print("Writing %s ... " %(filename))
         if fmax is None:
             fmax = max([max([fabs(np.f) for np in minst.node_patches]) for minst in self.mesh_instances])
         if hmax is None:
             hmax = max([max([fabs(np.h) for np in minst.node_patches]) for minst in self.mesh_instances])
         
-        print fmax, hmax
-        self.py_kinemage(filename, fmax, hmax, 100, kintools.hundred_red_blue_colours())
+        print(fmax, hmax)
+        self.create_kinemage(filename, fmax, hmax, 100, kintools.hundred_red_blue_colours())
         
-        print "done"
+        print("done")
                 

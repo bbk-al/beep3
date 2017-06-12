@@ -106,22 +106,20 @@ def randomPairPastels():
 def xyzqr2kin(filename):
     """Convert an xyzqr formatted file into spheres."""
     
-    from string import atof
-
     actual_radii = []
     unit_radii = []
     f = open(filename,'r')
     for xx in f.readlines():
-        parts = [atof(s) for s in xx.split()]
+        parts = [float(s) for s in xx.split()]
         actual_radii.append("r=%f {} %f %f %f" %(parts[-1], parts[0], parts[1], parts[2]))
         unit_radii.append("r=%f {} %f %f %f" %(1.0, parts[0], parts[1], parts[2]))
     f.close()
 
-    print "@kinemage"
-    print "@spherelist {actual_radii}"
-    print "\n".join(actual_radii)
-    print "@spherelist {unit_radii} off"
-    print "\n".join(unit_radii)
+    print("@kinemage")
+    print("@spherelist {actual_radii}")
+    print("\n".join(actual_radii))
+    print("@spherelist {unit_radii} off")
+    print("\n".join(unit_radii))
     
     return
     
@@ -132,6 +130,6 @@ if __name__ == "__main__":
     if (locals().has_key(mode)):
         locals()[mode](*sys.argv[2:])
     else:
-        print "Can't run that: try one of these... ", locals()  
+        print("Can't run that: try one of these... ", locals())
        
     

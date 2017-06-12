@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 from pybeep import Vector, Octree, BasicTriangle
@@ -62,7 +62,7 @@ def get_gts_info(filename, return_handle=False):
         nv, ne, nf = [int(xx) for xx in first_line.split()[:3]]
 
     except IOError:
-        print "Bad GTS file."
+        print("Bad GTS file.")
         return None
     finally:
 
@@ -90,7 +90,7 @@ def get_vertices_from_gts(filename):
             vertices.append(Vector(vx, vy, vz))
 
     except IOError:
-        print "Bad GTS file."
+        print("Bad GTS file.")
         vertices = []
 
     finally:
@@ -162,7 +162,7 @@ def gts_overmesh(filename_in, filename_out):
             add_triangle(get_mid_edge_vertex(e2_idx), t_centre_idx, v1_idx)
 
     except IOError:
-        print "Bad GTS file."
+        print("Bad GTS file.")
 
     finally:
         f.close()
@@ -205,7 +205,7 @@ def get_vertices_triangles_from_gts(filename):
             triangles.append(new_t)
 
     except IOError:
-        print "Bad GTS file."
+        print("Bad GTS file.")
         vertices, triangles = [], []
 
     finally:
@@ -232,7 +232,7 @@ def jagged_sphere(num_subdivides, radius, filename):
     write_gts(filename,
               vertices,
               triangles)
-    print "Wrote jagged sphere with %d vertices" %(len(vertices))
+    print("Wrote jagged sphere with %d vertices" %(len(vertices)))
     return
 
 def noisy_sphere(num_subdivides, radius, filename):
@@ -260,7 +260,7 @@ def noisy_sphere(num_subdivides, radius, filename):
     write_gts(filename,
               vertices,
               triangles)
-    print "Wrote noisy sphere with %d vertices" %(len(vertices))
+    print("Wrote noisy sphere with %d vertices" %(len(vertices)))
     return
 
 def reflect(gts_filename, output_filename):
@@ -296,7 +296,7 @@ def hemisphere(num_subdivides, radius, filename):
     write_gts(filename,
               vertices,
               triangles)
-    print "Wrote hemisphere with %d vertices" %(len(vertices))
+    print("Wrote hemisphere with %d vertices" %(len(vertices)))
     return
 
 def get_spherical_mesh(num_subdivides, radius=1.0, spherical_file=""):
@@ -374,13 +374,13 @@ def clean_gts(filename):
             ctr += 1
         else:
             pre_existing_idx = mappingB[pre_existing]
-            print "Clash between %d %s and %d %s" %(i, v, pre_existing_idx, vertices[pre_existing_idx])
+            print("Clash between %d %s and %d %s" %(i, v, pre_existing_idx, vertices[pre_existing_idx]))
             duplicates.append(i)
             mappingA[i] = pre_existing
 
     vertices = [v for i,v in enumerate(vertices) if i not in duplicates]
 
-    print "Number of vertices: ", len(vertices)
+    print("Number of vertices: ", len(vertices))
     new_tri = []
     for i,t in enumerate(triangles):
         #print t[0]
@@ -391,7 +391,7 @@ def clean_gts(filename):
             new_v2 in (new_v1, new_v3) or
             new_v3 in (new_v1, new_v2)
             ):
-            print "skipped a dud triangle (%d) " %(i), t
+            print("skipped a dud triangle (%d) " %(i), t)
             continue
         new_tri.append([new_v1, new_v2, new_v3])
 
@@ -443,11 +443,11 @@ def write_gts(filename, vertices, triangles):
         tout.append("%d %d %d" %(e1_idx, e2_idx, e3_idx))
     
     gts = open(filename, 'w')
-    print >>gts, "%d %d %d GtsSurface GtsFace GtsEdge GtsVertex" %(len(vertices), len(eout), len(triangles))
+    print("%d %d %d GtsSurface GtsFace GtsEdge GtsVertex" %(len(vertices), len(eout), len(triangles)), file=gts)
     for v in vertices:
-        print >>gts, "%f %f %f" %(v.x, v.y, v.z)
-    print >>gts, "\n".join(eout)
-    print >>gts, "\n".join(tout)
+        print("%f %f %f" %(v.x, v.y, v.z), file=gts)
+    print("\n".join(eout), file=gts)
+    print("\n".join(tout), file=gts)
         
     gts.close()
 
@@ -491,14 +491,14 @@ def get_clean_msms_vertices(msms_vertex_filename):
             adaptive_tree.insert(v)
         else:
             pre_existing = new_vertex_map[pre_existing]
-            print "Clash between %d %s %s and %d %s %s" %(i, v, n, pre_existing, vertices[pre_existing], normals[pre_existing])
+            print("Clash between %d %s %s and %d %s %s" %(i, v, n, pre_existing, vertices[pre_existing], normals[pre_existing]))
             remap[i] = pre_existing
             normals[pre_existing] += n
 
     vertices = [v for i,v in enumerate(vertices) if i not in remap.keys()]
     normals = [v.normalised() for i,v in enumerate(normals) if i not in remap.keys()]
 
-    print "done cleaning duplicate vertices"
+    print("done cleaning duplicate vertices")
 
     return vertices, normals
 
@@ -531,7 +531,7 @@ def msms_remesh(msms_vertex_filename, gts_filename):
         try:
             num = adaptive_tree.get(idx,near_pts)
         except IndexError:
-            print "IndexError: %d (%d vertices)" %(idx, len(vertices))
+            print("IndexError: %d (%d vertices)" %(idx, len(vertices)))
             raise IndexError
         #print near_pts
         near_pts = [pt for pt in near_pts[:num] if pt != idx]
@@ -617,7 +617,7 @@ def upsample_fh_vals(low_res_mesh, high_res_mesh, low_res_results, high_res_resu
                 closest_original_vertex = ii
                 break
         if (closest_original_vertex == -1):
-            print "Failed to find closest vertex."
+            print("Failed to find closest vertex.")
             raise Exception
 
         
@@ -626,8 +626,8 @@ def upsample_fh_vals(low_res_mesh, high_res_mesh, low_res_results, high_res_resu
         possible_triangles = [t for t in low_res_triangles if closest_original_vertex in t]
 
         if len(possible_triangles) == 0:
-            print v, centre, maxdim*2
-            print v, closest_original_vertex, low_res_vertices[closest_original_vertex], (low_res_vertices[closest_original_vertex] - v).length()
+            print(v, centre, maxdim*2)
+            print(v, closest_original_vertex, low_res_vertices[closest_original_vertex], (low_res_vertices[closest_original_vertex] - v).length())
             raise Exception
 
         vert_checklist = []
@@ -683,7 +683,7 @@ def upsample_fh_vals(low_res_mesh, high_res_mesh, low_res_results, high_res_resu
         new_f = v1f + pt_from_v1.dot(new_x_axis)*(v2f-v1f) + pt_from_v1.dot(new_y_axis)*(v3f-v1f);
         new_h = v1h + pt_from_v1.dot(new_x_axis)*(v2h-v1h) + pt_from_v1.dot(new_y_axis)*(v3h-v1h);
 
-        print >>high_res_out, new_f, new_h
+        print(new_f, new_h, file=high_res_out)
 
     high_res_out.close();
 
@@ -707,14 +707,14 @@ def gts2off(gts_filename, off_filename):
     vnormals = [v.normalised() for v in vnormals]
 
     fout = open(off_filename,'w')
-    print >>fout, "nOFF"
-    print >>fout, "3"
+    print("nOFF", file=fout)
+    print("3", file=fout)
     # last number is number of edges; unused by OFF format, but must be present
-    print >>fout, "%9d%9d%9d" %(len(vertices),len(triangles),0) 
+    print("%9d%9d%9d" %(len(vertices),len(triangles),0), file=fout)
     for v,vn in zip(vertices, vnormals):
-        print >>fout, "%9.3f%9.3f%9.3f%9.3f%9.3f%9.3f" %(v.x, v.y, v.z, vn.x, vn.y, vn.z)
+        print("%9.3f%9.3f%9.3f%9.3f%9.3f%9.3f" %(v.x, v.y, v.z, vn.x, vn.y, vn.z), file=fout)
     for t in triangles:
-        print >>fout, "    3 %8d%8d%8d" %(t[0],t[1],t[2])
+        print("    3 %8d%8d%8d" %(t[0],t[1],t[2]), file=fout)
     fout.close()
 
     return
@@ -723,13 +723,13 @@ def off2gts(off_filename, gts_filename):
 
     off_file = open(off_filename,'r')
     first_line = off_file.readline()
-    num_verts, num_tris = [atof(xx) for xx in first_line.split()]
+    num_verts, num_tris = [float(xx) for xx in first_line.split()]
     vertex_lines = [off_file.readline() for ii in range(num_verts)]
     tri_lines = [off_file.readline() for ii in range(num_tris)]
 
-    vertices = [[atof(xx) for xx in line.split()]
+    vertices = [[float(xx) for xx in line.split()]
                 for line in vertex_lines]
-    triangles = [[atoi(xx) for xx in line.split()[1:4]]
+    triangles = [[int(xx) for xx in line.split()[1:4]]
                  for line in tri_lines]
     vnormals = [Vector(0,0,0) for ii in range(num_verts)]
     for tri in triangles:
@@ -764,11 +764,11 @@ def gts2msms(gts_filename, msms_filename):
     vnormals = [v.normalised() for v in vnormals]
 
     fout = open(msms_filename,'w')
-    print >>fout, "%d    %d" %(len(vertices),len(triangles))
+    print("%d    %d" %(len(vertices),len(triangles)), file=fout)
     for ii,(v,vn) in enumerate(zip(vertices, vnormals)):
-        print >>fout, "%9.3f %9.3f %9.3f %9.3f %9.3f %9.3f %7d %7d  2" %(v.x, v.y, v.z, vn.x, vn.y, vn.z, 0, 0)
+        print("%9.3f %9.3f %9.3f %9.3f %9.3f %9.3f %7d %7d  2" %(v.x, v.y, v.z, vn.x, vn.y, vn.z, 0, 0), file=fout)
     for t in triangles:
-        print >>fout, "%8d%8d%8d" %(t[0]+1,t[1]+1,t[2]+1)
+        print("%8d%8d%8d" %(t[0]+1,t[1]+1,t[2]+1), file=fout)
     fout.close()
 
     return
@@ -804,8 +804,8 @@ def align_mesh_to_reference(reference_mesh, mesh_to_realign):
         possible_triangles = [t for t in ref_triangles if closest_original_vertex in t]
 
         if len(possible_triangles) == 0:
-            print v, centre, maxdim*2
-            print v, closest_original_vertex, ref_vertices[closest_original_vertex], (ref_vertices[closest_original_vertex] - v).length()
+            print(v, centre, maxdim*2)
+            print(v, closest_original_vertex, ref_vertices[closest_original_vertex], (ref_vertices[closest_original_vertex] - v).length())
             raise Exception
 
         vert_checklist = []
@@ -889,7 +889,7 @@ def msms2xyzn(msms_vertex_filename, xyzn_filename):
 
     fout = open(xyzn_filename,'w')
     for v,n in zip(vertices, normals):
-        print >>fout, v.x, v.y, v.z, n.x, n.y, n.z
+        print(v.x, v.y, v.z, n.x, n.y, n.z, file=fout)
     fout.close()
 
     return
@@ -913,7 +913,7 @@ def msms2gts(msms_vertex_filename, msms_face_filename, gts_filename):
     centre = Vector(0,0,0)
     for v in vertices:
         centre += v
-    centre = centre / len(vertices)
+    centre /= len(vertices)
 
     # get maximum xyz extent of set of points
     maxdim = max([ (v - centre).length() for v in vertices ])
@@ -937,7 +937,7 @@ def msms2gts(msms_vertex_filename, msms_face_filename, gts_filename):
             ctr += 1
         else:
             pre_existing_idx = mappingB[pre_existing]
-            print "Clash between %d %s %s and %d %s %s" %(i, v, n, pre_existing_idx, vertices[pre_existing_idx], normals[pre_existing_idx])
+            print("Clash between %d %s %s and %d %s %s" %(i, v, n, pre_existing_idx, vertices[pre_existing_idx], normals[pre_existing_idx]))
             duplicates.append(i)
             mappingA[i] = pre_existing
 
@@ -945,11 +945,10 @@ def msms2gts(msms_vertex_filename, msms_face_filename, gts_filename):
     normals = [n for i,n in enumerate(normals) if i not in duplicates]
 
     tri = [line.split() for line in open(msms_face_filename,'r') if line[0] != '#']
-    from string import atof # for some reason atoi doesn't work here ??
-    tri = [[int(atof(t))-1 for t in tri_def] for tri_def in tri]
+    tri = [[int(float(t))-1 for t in tri_def] for tri_def in tri]
     tri.remove(tri[0])
-    print "Number of vertices: ", len(vertices)
-    print "Number of normals: ", len(normals)
+    print("Number of vertices: ", len(vertices))
+    print("Number of normals: ", len(normals))
     #new_tri = tri[:]
     new_tri = []
     for i,t in enumerate(tri):
@@ -961,7 +960,7 @@ def msms2gts(msms_vertex_filename, msms_face_filename, gts_filename):
             new_v2 in (new_v1, new_v3) or
             new_v3 in (new_v1, new_v2)
             ):
-            print "skipped a dud triangle (%d) " %(i), t
+            print("skipped a dud triangle (%d) " %(i), t)
             continue
         new_tri.append([new_v1, new_v2, new_v3])
 
@@ -976,7 +975,7 @@ def gts_wireframe(gts_file, kin_output):
     # get vertices and number of faces
     nv, ne, nf = get_gts_info(gts_file)
 
-    print nv, ne, nf
+    print(nv, ne, nf)
 
     # get vertices
     vertices = get_vertices_from_gts(gts_file)
@@ -987,8 +986,8 @@ def gts_wireframe(gts_file, kin_output):
         get_next_line_not_comment(gts)
 
     kin_out = open(kin_output, 'w')
-    print >>kin_out, "@kinemage"
-    print >>kin_out, "@vectorlist"
+    print("@kinemage", file=kin_out)
+    print("@vectorlist", file=kin_out)
 
     for edge in range(ne):
         edge_pair = get_next_line_not_comment(gts).split()
@@ -998,7 +997,7 @@ def gts_wireframe(gts_file, kin_output):
         v2 = vertices[p2]
         x1,y1,z1 = [v1.x,v1.y,v1.z]
         x2, y2, z2 = [v2.x, v2.y, v2.z]
-        print >>kin_out, "{} P %f %f %f\n{} %f %f %f" %(x1, y1, z1, x2, y2, z2)
+        print("{} P %f %f %f\n{} %f %f %f" %(x1, y1, z1, x2, y2, z2), file=kin_out)
 
     return
 
@@ -1012,12 +1011,12 @@ def gts_solid(gts_filename, kin_output, idx=0, num_indices=1):
 
     # write kinemage
     kin_out = open(kin_output, 'w')
-    print >>kin_out, "@kinemage"
+    print("@kinemage", file=kin_out)
 
     colour_names, col_str = kintools.colour_ranges(num_indices)
-    print >> kin_out, col_str
+    print(col_str, file= kin_out)
 
-    print >>kin_out, "@trianglelist {triangles}"
+    print("@trianglelist {triangles}", file=kin_out)
 
     for t in triangles:
 
@@ -1031,25 +1030,23 @@ def gts_solid(gts_filename, kin_output, idx=0, num_indices=1):
         b = (bx, by, bz) = vertices[v2]
         c = (cx, cy, cz) = vertices[v3]
 
-        print >>kin_out, "X %f %f %f %f %f %f %s %f %f %f" %(ax, ay, az,
-                                                             bx, by, bz, colour,
-                                                             cx, cy, cz )
+        print("X %f %f %f %f %f %f %s %f %f %f" % \
+              (ax, ay, az, bx, by, bz, colour, cx, cy, cz), file=kin_out)
 
     kin_out.close()
 
 def gts_lower_precision(gts_in, gts_out):
 
-    from string import atof, atoi
     input_lines = [xx.strip() for xx in open(gts_in,'r').readlines()]
-    verts,edges,faces = [atoi(xx) for xx in input_lines[0].split()[:3]]
+    verts,edges,faces = [int(xx) for xx in input_lines[0].split()[:3]]
 
     fout = open(gts_out,'w')
-    print >>fout, input_lines[0]
+    print(input_lines[0], file=fout)
     for line in input_lines[1:verts+1]:
-        vx, vy, vz = [atof(xx) for xx in line.split()]
-        print >>fout, "%9.3f %9.3f %9.3f" %(vx, vy, vz)
+        vx, vy, vz = [float(xx) for xx in line.split()]
+        print("%9.3f %9.3f %9.3f" %(vx, vy, vz), file=fout)
     for line in input_lines[verts+1:]:
-        print >>fout, line
+        print(line, file=fout)
     fout.close()
     return
 
@@ -1093,7 +1090,7 @@ def xyzr_to_vertices(xyzr_filename, gts_filename, probe_radius=1.4):
     nlist = []
     for sph in spheres:
         offset = len(vlist)
-        x,y,z,r = [atof(xx) for xx in sph.split()]
+        x,y,z,r = [float(xx) for xx in sph.split()]
         r += probe_radius
         for vv in master_vlist:
             n = Vector(vv)
@@ -1116,8 +1113,8 @@ def xyzn2xyzq(xyzn_filename, xyzq_filename, net_charge):
     q = net_charge / len(pts)
     fout = open(xyzq_filename,'w')
     for line in pts:
-        x,y,z = [atof(xx) for xx in line.split()[:3]]
-        print >>fout, x,y,z,q,1.0
+        x,y,z = [float(xx) for xx in line.split()[:3]]
+        print(x,y,z,q,1.0, file=fout)
     fout.close()
     return
 
@@ -1126,8 +1123,8 @@ if __name__ == "__main__":
 
     import sys
     mode = sys.argv[1]
-    if (locals().has_key(mode)):
+    if (mode in locals()):
         locals()[mode](*sys.argv[2:])
     else:
-        print "Can't run that: try one of these... ", locals()
+        print("Can't run that: try one of these... ", locals())
 

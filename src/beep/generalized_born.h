@@ -80,7 +80,7 @@ public:
             double surf_int = 0;
             const Vector& x = ch_it->position();
 
-            if (ch_it->charge != 0)
+            if (ch_it->get_charge() != 0)
             {
                 for (std::vector<QuadPoint>::const_iterator qp_it=surface_quads.begin(), qp_end=surface_quads.end();
                     qp_it != qp_end;
@@ -112,7 +112,7 @@ public:
             double surf_int = 0;
             const Vector& x = ch_it->position();
 
-            if (ch_it->charge != 0)
+            if (ch_it->get_charge() != 0)
             {
 
                 for (std::vector<QuadPoint>::const_iterator qp_it=surface_quads.begin(), qp_end=surface_quads.end();
@@ -144,7 +144,7 @@ public:
         double net_charge = 0;
         for (std::vector<Charge>::const_iterator ch_it=charges.begin(), ch_end=charges.end(); ch_it != ch_end; ++ch_it)
         {
-            net_charge += ch_it->charge;
+            net_charge += ch_it->get_charge();
         }
 
         double ratio = epsilon_int / epsilon_ext;
@@ -163,17 +163,17 @@ public:
         for (unsigned int ii=0; ii < charges.size(); ++ii)
         {
             const Charge& chi = charges[ii];
-            if (chi.charge == 0) { continue; }
+            if (chi.get_charge() == 0) continue;
             double Ri = born_radii[ii];
 
             for (unsigned int jj=ii; jj < charges.size(); ++jj)
             {
                 const Charge& chj = charges[jj];
-                if (chj.charge == 0) { continue; }
+                if (chj.get_charge() == 0) continue;
                 double Rj = born_radii[jj];
                 //std::cout << "ri,rj: " << Ri << " " << Rj << std::endl;
 
-                double numerator = chi.charge * chj.charge;
+                double numerator = chi.get_charge() * chj.get_charge();
                 double rij2 = (chj - chi).length2();
                 double RiRj = Ri * Rj;
                 double exp_term = exp(-rij2/(F*RiRj));

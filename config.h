@@ -2,7 +2,7 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
 /* Define to 1 if you have the <CL/cl.h> header file. */
-/* #undef HAVE_CL_CL_H */
+#define HAVE_CL_CL_H 1
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #define HAVE_DLFCN_H 1
@@ -57,13 +57,13 @@
 #define PACKAGE_NAME "beep"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "beep 0.1"
+#define PACKAGE_STRING "beep 0.2"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "beep"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "0.1"
+#define PACKAGE_VERSION "0.2"
 
 /* Define to necessary symbol if this constant uses a non-standard name on
    your system. */
@@ -73,4 +73,4 @@
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "0.1"
+#define VERSION "0.2"

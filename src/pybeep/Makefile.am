@@ -2,8 +2,8 @@ include $(top_srcdir)/common.am
 lib_LTLIBRARIES = libBEEP.la
 libBEEP_la_SOURCES = pybeep.cpp ../beep/beep.cpp 
 libBEEP_la_LIBADD = ../bem/libbem.la 
-libBEEP_la_LDFLAGS = -lboost_python -lgomp -static-libstdc++ 
-libBEEP_la_CPPFLAGS = -I/usr/include/python -fopenmp
+libBEEP_la_LDFLAGS = $(LDPYBEEP)
+libBEEP_la_CPPFLAGS = -fopenmp
 EXTRA_DIST = add_results_to_mtz.py \
 beep-ecm.py \
 beep-nocrowding.py \

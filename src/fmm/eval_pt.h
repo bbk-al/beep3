@@ -184,7 +184,7 @@ public:
         if (d_squared <= PRECIS){ return; }
 
         // add screened coulomb potential
-        const double pot_term = ch.charge*exp(-beta*d) / d;
+        const double pot_term = ch.get_charge()*exp(-beta*d) / d;
         pot += pot_term;
 
         // first derivative of potential (field)
@@ -351,7 +351,7 @@ public:
         if (d_squared <= PRECIS) {return;}
 
         // add screened coulomb potential
-        const double pot_term = ch.charge*exp(-beta*d) / d;
+        const double pot_term = ch.get_charge()*exp(-beta*d) / d;
         pot += pot_term;
 
         // first derivative of potential (field)

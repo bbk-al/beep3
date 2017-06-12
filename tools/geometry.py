@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # vim: set fileencoding=UTF8 :
 #
 # geometry.py
@@ -155,12 +155,12 @@ def test_rand_rot():
     from geometry import apply_quaternion_to_vector
     
     f = open("random_rotation_test.kin", "w")
-    print >>f, "@kinemage"
-    print >>f, "@dotlist"
+    print("@kinemage", file=f)
+    print("@dotlist", file=f)
     
     for ii in range(10000):
         rand_pt_on_surface_of_sphere = apply_quaternion_to_vector(_rand_rot(), xx)
-        print >>f, "%f %f %f" %(rand_pt_on_surface_of_sphere.x,rand_pt_on_surface_of_sphere.y,rand_pt_on_surface_of_sphere.z)
+        print("%f %f %f" %(rand_pt_on_surface_of_sphere.x,rand_pt_on_surface_of_sphere.y,rand_pt_on_surface_of_sphere.z), file=f)
 
     f.close()
 

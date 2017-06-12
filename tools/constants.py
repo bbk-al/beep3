@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # vim: set fileencoding=UTF8 :
 #
@@ -61,10 +61,10 @@ def convert_concentration_to_kappa(conc):
 
     screening_length = sqrt(Dsolvent*epsilon0*kT/(2.*Avogadro*elementary_charge*elementary_charge*conc))
     screening_length /= Angstroms
-    print screening_length 
+    print(screening_length)
 
     kappa = 1.0 / screening_length
-    print kappa
+    print(kappa)
     return
 
 #

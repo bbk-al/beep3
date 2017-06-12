@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 import constants
 from math import pi
@@ -24,5 +24,5 @@ if __name__=="__main__":
     if (argc == 5): Dext=float(sys.argv[4])
     
     e = born_solvation_energy(charge, radius, Dint, Dext)
-    print e, "kJ/mol"
+    print(e, "kJ/mol")
 

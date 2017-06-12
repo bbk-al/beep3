@@ -3,13 +3,12 @@
 
 from math import factorial, pi
 from constants import *
-from string import atof
 import sys
 
 # A python script to calculate the analytic potential in a 
 # spherical dielectric cavity with off-centre charge.
 
-kappa = atof(sys.argv[1]) #0.125713350686
+kappa = float(sys.argv[1]) #0.125713350686
 q = 1.0
 D1 = 80.0 # internal dielectric
 D2 = 80.0 # external dielectric
@@ -96,7 +95,7 @@ for Rc in [0.0]:
     else:
         force = 0
     #print "radial qE force (kJ/molA): ", force * force_conversion_factor
-    print Rc,potential*potential_conversion_factor,force*force_conversion_factor
+    print(Rc,potential*potential_conversion_factor,force*force_conversion_factor)
 
     Rc += delta
     
