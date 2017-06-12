@@ -1,0 +1,7 @@
+module mesh_library {
+
+    nodegroup MeshLibrary { 
+        entry MeshLibrary(std::vector<std::string> filenames);
+    };
+
+}; 

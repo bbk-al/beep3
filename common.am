@@ -1,0 +1,7 @@
+## common.am
+
+# this adds OPENCL #define if we have detected OPENCL
+if WITH_OPENCL
+    DEFS += -DOPENCL
+endif
+

@@ -1,0 +1,11 @@
+module explicit_worker {
+
+    array [OctreeIndexer] ExplicitWorker { 
+        
+        entry ExplicitWorker();
+        entry void precalc(double kappa, unsigned int total_num_patches);
+        entry void evaluate(double kappa);
+	entry void triggerLB();
+    }
+
+}; 

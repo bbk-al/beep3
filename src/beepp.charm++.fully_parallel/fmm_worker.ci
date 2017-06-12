@@ -1,0 +1,47 @@
+module fmm_worker {
+
+    //extern module parallel_fmm_octree;
+    extern module fh_values_nodegroup;
+    
+    using beepp::MultipoleHolderT;
+    using beepp::PlaneWaveHolderT;
+
+    namespace beepp {
+    
+	template <class HType> message FMM_Msg;
+    template <int NTERMS, int NLAMBS, int NWAVES> array [OctreeIndexer] FMMWorkerT { 
+
+        entry FMMWorkerT(CProxy_FMM_Globals_NodeGroupT<NTERMS,NLAMBS> fmm_globals_proxy,
+                        CProxy_ParallelFMMOctree<CharmNodePatch, CProxy_FMMWorkerT<NTERMS,NLAMBS,NWAVES> > fmm_tree_proxy,
+                        CProxy_FH_Values_NodeGroup fh_proxy, 
+                        double edge_length);
+        entry void solve(double, double, CkCallback cb);
+        entry void form_multipoles();
+        entry [inline] void make_plane_waves(int dummy);
+        entry void pass_multipole_upwards();
+    	entry [inline] void inherit_lpole_from_parent(FMM_Msg< MultipoleHolderT<NTERMS> > *lpole_msg);
+        entry [expedited] void receive_multipole_contribution_from_child(FMM_Msg< MultipoleHolderT<NTERMS> > *mpole_msg);
+        entry void evaluate();
+        entry void debug_chk();  
+        
+        entry void check_waves_complete(int);
+        entry void request_collected_waves();
+        entry [inline] void receive_incoming_wave(CkMessage*);
+    }
+    
+    //array [OctreeIndexer] FMMWorkerT<2,2,6>;
+    //array [OctreeIndexer] FMMWorkerT<4,4,32>;
+    array [OctreeIndexer] FMMWorkerT<9,9,67>;
+    //array [OctreeIndexer] FMMWorkerT<18,18,300>;
+    //message FMM_Msg< MultipoleHolderT<2> >;
+    //message FMM_Msg< MultiHolder<6,PlaneWaveHolderT<2,6> > >;   
+    //message FMM_Msg< MultipoleHolderT<4> >;
+    //message FMM_Msg< MultiHolder<6,PlaneWaveHolderT<4,32> > >;  
+    message FMM_Msg< MultipoleHolderT<9> >;
+    message FMM_Msg< MultiHolder<6,PlaneWaveHolderT<9,67> > >;  
+    //message FMM_Msg< MultipoleHolderT<18> >;
+    //message FMM_Msg< MultiHolder<6,PlaneWaveHolderT<18,300> > >;    
+    
+    }
+
+}; 

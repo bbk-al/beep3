@@ -1,0 +1,16 @@
+module iteration_handler {
+
+	extern module fmm_worker;
+	
+    chare IterationHandler { 
+        
+        entry IterationHandler(double _universe_edge_length, double _beta);
+        entry void do_bem_fmm_iteration(CkCallback cb, FH_Values fh_vals);
+        entry [threaded] void phase_two();
+        entry void done_evals();
+        entry void reduce_fh_results();
+        entry void done_reduction(CkReductionMsg* msg);
+        entry [sync] void set_num_workers(unsigned int num_workers_in);
+    };
+
+}; 

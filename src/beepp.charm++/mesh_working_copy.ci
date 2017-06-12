@@ -1,0 +1,18 @@
+module mesh_working_copy {
+
+    // the standard 'vanilla' fmm
+    //extern module vanilla_fmm;
+        
+    array [1D] MeshWorkingCopy { 
+
+        entry MeshWorkingCopy();
+        entry void init(unsigned int, const Quaternion, const Vector, unsigned int, double, double, unsigned int, unsigned int);
+        
+        entry void calculate_rhs(CProxy_VanillaFMM<18,18,300> VanillaFMMProxy, CkCallback cb);
+        entry void process_returned_eval_pts(EvalMessage *msg);
+        
+        entry void calculate_energy(double kappa, double Dsolvent);
+        entry void write_output(std::string output_filename);
+    };
+
+}; 

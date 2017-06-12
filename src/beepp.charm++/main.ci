@@ -1,0 +1,40 @@
+mainmodule main {
+
+  extern module mesh_working_copy;
+  extern module mesh_library;
+  extern module rhs_handler;
+  extern module gmres;
+  extern module iteration_handler;
+  extern module fh_values_nodegroup;
+  extern module opencl_nodegroup;
+
+  // the hybrid 12-fold BEM/FMM
+  extern module bem_fmm;
+  group BEM_FMM<NT,NL,NW,CharmNodePatch>;
+  readonly CProxy_BEM_FMM<NT,NL,NW,CharmNodePatch> BEM_FMM_Proxy;
+
+  // vanilla
+  extern module vanilla_fmm;
+  group VanillaFMM<18,18,300>;
+
+  readonly CProxy_Main MainProxy;
+  readonly CProxy_MeshWorkingCopy MeshWorkingCopyProxy;
+  readonly CProxy_MeshLibrary MeshLibraryProxy;
+  readonly CProxy_RHS_Handler RHS_HandlerProxy;
+  readonly CProxy_GMRES GMRESProxy;
+  readonly CProxy_IterationHandler IterationHandlerProxy;
+  readonly CProxy_FH_Values_NodeGroup FH_Values_NodeGroupProxy;
+  readonly CProxy_OpenCL_NodeGroup OpenCL_NodeGroupProxy;
+      
+  mainchare Main {
+    
+    entry Main(CkArgMsg* msg);
+    entry [threaded] void create_workers(CkCallback);
+    entry [threaded] void get_rhs();
+    entry void quiescenceHandler();
+    
+    initnode void initManualLB();
+    
+  };
+
+};

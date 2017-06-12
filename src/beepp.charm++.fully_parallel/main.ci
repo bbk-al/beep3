@@ -1,0 +1,48 @@
+mainmodule main {
+
+  extern module mesh_working_copy;
+  extern module fmm_globals_nodegroup;
+  extern module mesh_library;
+  extern module parallel_fmm_octree;
+  extern module fmm_worker;
+  extern module explicit_worker;
+  extern module rhs_handler;
+  extern module gmres;
+  extern module iteration_handler;
+  extern module fh_values_nodegroup;
+  extern module opencl_nodegroup;
+  extern module comlib;
+
+  extern module vanilla_fmm_worker;
+  extern module vanilla_fmm_evals;
+
+  // Two different types of parallel octree knocking about
+  nodegroup ParallelFMMOctree<Charge,vanilla_fmm::CProxy_VanillaFMMWorker>;
+  nodegroup ParallelFMMOctree<CharmNodePatch, beepp::CProxy_FMMWorker>;
+ 
+  readonly CProxy_Main MainProxy;
+  readonly CProxy_MeshWorkingCopy MeshWorkingCopyProxy;
+  readonly CProxy_MeshLibrary MeshLibraryProxy;
+  readonly beepp::CProxy_FMM_Globals_NodeGroup FMM_Globals_Proxy;
+  readonly beepp::CProxy_ParallelTree ParallelFMMOctreeProxy;
+  readonly CProxy_FMMWorker FMMWorkerProxy;
+  readonly CProxy_ExplicitWorker ExplicitWorkerProxy;
+  readonly CProxy_RHS_Handler RHS_HandlerProxy;
+  readonly CProxy_GMRES GMRESProxy;
+  readonly CProxy_IterationHandler IterationHandlerProxy;
+  readonly CProxy_FH_Values_NodeGroup FH_Values_NodeGroupProxy;
+  readonly CProxy_OpenCL_NodeGroup OpenCL_NodeGroupProxy;
+  readonly ComlibInstanceHandle streaming_strat;
+      
+  mainchare Main {
+    
+    entry Main(CkArgMsg* msg);
+    entry [threaded] void create_workers(CkCallback);
+    entry [threaded] void get_rhs();
+    entry void quiescenceHandler();
+    
+    initnode void initManualLB();
+    
+  };
+
+};

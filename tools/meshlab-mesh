@@ -1,0 +1,21 @@
+#!/bin/bash
+export PDB="${1}.pdb"
+export PQR="${1}.pqr"
+export XYZR="${1}.xyzr"
+export XYZN="${1}.xyz"
+export XYZQ="${1}.xyzq"
+CENTRE="${1}.centre"
+export GTS="${1}.gts"
+export MESHLAB="/home/david/downloads/MeshLabSrc_AllInc_v130a/meshlab/src/distrib/meshlabserver"
+/home/david/pdb2pqr/pdb2pqr.py --apbs-input --ff=parse $PDB $PQR
+./pqrtools.py pqr2xyzr $PQR > $XYZR
+msms -probe_radius 1.5 -density 2.4 -if $XYZR -of $1
+export TARGET_FACES=$((`wc -l < ${1}.face` - 3))
+./gts_utils.py msms2gts $1.vert $1.face ${1}-ref.gts
+./gts_utils.py msms2xyzn $1.vert $XYZN
+cat butterfly.mlx | sed "s/TARGET_NUM_FACES/${TARGET_FACES}/" > ${1}.mlx
+$MESHLAB -i $XYZN -o $GTS -s poisson.mlx &&
+$MESHLAB -i $GTS -o $GTS -s ${1}.mlx
+$MESHLAB -i $GTS -i ${1}-ref.gts -o $GTS -s realign.mlx
+$MESHLAB -i $GTS -o $GTS -s loop-ls3.mlx
+

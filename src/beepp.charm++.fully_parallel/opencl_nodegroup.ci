@@ -1,0 +1,11 @@
+module opencl_nodegroup {
+
+	nodegroup OpenCL_NodeGroup { 
+	  
+	    entry OpenCL_NodeGroup(unsigned int num_patches);
+		entry [exclusive] void run_bem(CkArrayIndexOctreeIndexer idxer, double kappa);
+		entry [exclusive] void collate_bem_results(CkCallback cb);
+		entry [exclusive] void precalc_bem(CkArrayIndexOctreeIndexer idxer, double kappa);
+	};
+
+};

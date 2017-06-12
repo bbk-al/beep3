@@ -1,0 +1,20 @@
+module vanilla_fmm_evals {
+    
+    namespace vanilla_fmm
+    {
+    
+    message Eval_Message {
+        EvalPt data[]; 
+    };
+    
+    chare Vanilla_FMM_Evals { 
+        
+        entry Vanilla_FMM_Evals(std::vector<Vector> pts, 
+                                CProxy_ParallelFMMOctree<Charge, CProxy_VanillaFMMWorker> ParallelFMMOctreeProxy, 
+                                CProxy_VanillaFMMWorker VanillaFMMWorkerProxy);
+        entry void receive_eval_results(Eval_Message* msg);
+        entry void evaluate(CkCallback cb);
+    };
+    
+    }
+}; 

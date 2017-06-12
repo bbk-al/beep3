@@ -1,0 +1,10 @@
+module gmres {
+
+    chare GMRES { 
+        
+        entry GMRES();
+        entry [sync,threaded] void solve(std::string output_filename, double kappa, double Dsolvent, unsigned int num_patches, FH_Values rhs);
+        
+    };
+
+}; 

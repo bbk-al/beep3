@@ -1,0 +1,19 @@
+module mesh_working_copy {
+
+    //extern module vanilla_fmm_evals;
+        
+    array [1D] MeshWorkingCopy { 
+
+        entry MeshWorkingCopy();
+        entry void init(unsigned int, const Quaternion, const Vector, unsigned int, double, double);
+        
+        entry void calculate_rhs(CProxy_ParallelFMMOctree<Charge,vanilla_fmm::CProxy_VanillaFMMWorker> ParallelFMMOctreeProxy, 
+                           vanilla_fmm::CProxy_VanillaFMMWorker VanillaFMMWorkerProxy,
+                           CkCallback cb);
+        entry void process_returned_eval_pts(vanilla_fmm::Eval_Message *msg);
+        
+        entry void calculate_energy(double kappa, double Dsolvent);
+        entry void write_output(std::string output_filename);
+    };
+
+}; 

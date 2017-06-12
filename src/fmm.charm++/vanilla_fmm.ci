@@ -1,0 +1,26 @@
+module vanilla_fmm {
+
+    message EvalMessage {
+        EvalPt data[];
+    };
+
+    template<int NTERMS,int NLAMBS,int NWAVES> nodegroup VanillaFMM { 
+
+        entry VanillaFMM(unsigned int max_items_per_node,
+                                Vector universe_centre,
+                                double universe_edge_length,
+                                unsigned int,
+                                CkCallback);
+        entry void insert(std::vector<Charge> items);
+        entry void insert(Charge single);
+        entry void finalize(CkCallback cb);
+        entry void solve(double beta, CkCallback cb);
+        entry void solve_and_evaluate(double beta, CkCallback cb);
+        entry void evaluate(CkCallback cb_results);
+        entry [exclusive] void __private_evaluate(EvalMessage*);        
+        entry [exclusive] void evaluate(EvalMessage*);
+        entry [exclusive] void recv_data(EvalMessage *msg);
+        entry void callback_when_filled(unsigned int, CkCallback);
+    };
+   
+}; 

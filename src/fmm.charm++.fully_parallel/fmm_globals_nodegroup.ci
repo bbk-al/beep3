@@ -1,0 +1,15 @@
+module fmm_globals_nodegroup {
+
+	template<int NTERMS, int NLAMBS> nodegroup FMM_Globals_NodeGroupT { 
+	  
+	    entry FMM_Globals_NodeGroupT();
+
+	}
+	
+	// have to declare all instances of the template that we might want to use
+	nodegroup FMM_Globals_NodeGroupT<2,2>;
+	nodegroup FMM_Globals_NodeGroupT<4,4>;
+	nodegroup FMM_Globals_NodeGroupT<9,9>;
+	nodegroup FMM_Globals_NodeGroupT<18,18>;
+
+};

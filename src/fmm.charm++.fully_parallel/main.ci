@@ -1,0 +1,33 @@
+mainmodule main {
+
+  extern module fmm_globals_nodegroup;
+  extern module parallel_fmm_octree;
+  extern module opencl_nodegroup;
+  extern module vanilla_fmm_worker;
+  extern module vanilla_fmm_evals;
+  extern module comlib;  
+  
+  nodegroup ParallelFMMOctree<Charge,vanilla_fmm::CProxy_VanillaFMMWorker>; // decl. of template type 
+  
+  readonly CProxy_Main MainProxy;
+  readonly CProxy_FMM_Globals_NodeGroup FMM_Globals_Proxy;
+  readonly CProxy_ParallelFMMOctree<Charge,vanilla_fmm::CProxy_VanillaFMMWorker> ParallelFMMOctreeProxy;
+  readonly vanilla_fmm::CProxy_VanillaFMMWorker VanillaFMMWorkerProxy;
+  readonly vanilla_fmm::CProxy_Vanilla_FMM_Evals Vanilla_FMM_Evals_Proxy;
+  readonly ComlibInstanceHandle streaming_strat;
+  
+  readonly CProxy_OpenCL_NodeGroup OpenCL_NodeGroupProxy;
+   
+  mainchare Main {
+    
+    entry Main(CkArgMsg* msg);
+    entry [threaded] void create_workers();
+    entry void fmm_worker_complete();
+    entry void completed(vanilla_fmm::Eval_Message* msg);
+    entry void quiescenceHandler();
+    
+    initnode void initManualLB();
+    
+  };
+
+};

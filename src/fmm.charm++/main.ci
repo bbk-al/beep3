@@ -1,0 +1,24 @@
+mainmodule main {
+
+  extern module vanilla_fmm;
+  extern module opencl_nodegroup;
+  
+  nodegroup VanillaFMM<18,18,300>; // decl. of template type 
+  
+  readonly CProxy_Main MainProxy;
+  readonly CProxy_VanillaFMM<18,18,300> VanillaFMMProxy;
+  
+  readonly CProxy_OpenCL_NodeGroup OpenCL_NodeGroupProxy;
+   
+  mainchare Main {
+    
+    entry Main(CkArgMsg* msg);
+    entry [threaded] void create_workers();
+    entry void fmm_worker_complete();
+    entry void quiescenceHandler();
+    
+    initnode void initManualLB();
+    
+  };
+
+};

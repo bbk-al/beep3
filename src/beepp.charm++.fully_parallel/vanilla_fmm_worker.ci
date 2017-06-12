@@ -1,0 +1,53 @@
+module vanilla_fmm_worker {
+
+    extern module vanilla_fmm_evals;
+
+    namespace vanilla_fmm {
+    
+        template <class HType> message FMM_Msg;
+        template <int NTERMS, int NLAMBS, int NWAVES> array [OctreeIndexer] VanillaFMMWorkerT { 
+            
+            entry VanillaFMMWorkerT(CProxy_FMM_Globals_NodeGroupT<NTERMS,NLAMBS> fmm_globals_proxy,
+                                    CProxy_ParallelTree fmm_tree_proxy,
+                                    double edge_length);
+            entry [inline] void inherit_lpole_from_parent(FMM_Msg< MultipoleHolderT<NTERMS> > *lpole_msg);
+            entry [expedited] void receive_multipole_contribution_from_child(FMM_Msg< MultipoleHolderT<NTERMS> > *mpole_msg);
+            entry [threaded] void evaluate(Eval_Message* msg);
+            entry void check_waves_complete(int);
+            entry void request_collected_waves();
+            entry [inline] void receive_incoming_wave(CkMessage*);
+            entry void solve(double, CkCallback);
+            entry [inline] void make_plane_waves(int dummy);
+
+        }
+    
+    }
+
+/*
+    {
+        array [OctreeIndexer] VanillaFMMWorkerT<2,2,6>;
+        message FMM_Msg< vanilla_fmm::MultipoleHolderT<2> >;
+        message FMM_Msg< vanilla_fmm::MultiHolder<6,vanilla_fmm::PlaneWaveHolderT<2,6> > >;   
+    }
+
+    {
+        array [OctreeIndexer] VanillaFMMWorkerT<4,4,32>;
+        message FMM_Msg< vanilla_fmm::MultipoleHolderT<4> >;
+        message FMM_Msg< vanilla_fmm::MultiHolder<6,vanilla_fmm::PlaneWaveHolderT<4,32> > >;   
+    }
+    
+    {
+        array [OctreeIndexer] VanillaFMMWorkerT<9,9,67>;
+        message FMM_Msg< vanilla_fmm::MultipoleHolderT<9> >;
+        message FMM_Msg< MultiHolder<6,vanilla_fmm::PlaneWaveHolderT<9,67> > >;
+    }
+*/
+
+    {
+        array [OctreeIndexer] VanillaFMMWorkerT<18,18,300>;
+        message FMM_Msg< vanilla_fmm::MultipoleHolderT<18> >;
+        message FMM_Msg< MultiHolder<6,vanilla_fmm::PlaneWaveHolderT<18,300> > >;   
+    }
+
+
+}; 

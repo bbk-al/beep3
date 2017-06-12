@@ -1,0 +1,10 @@
+module fh_values_nodegroup {
+
+	group FH_Values_NodeGroup { 
+	  
+	    entry FH_Values_NodeGroup(unsigned int);
+        entry void set(FH_Values vals, CkCallback cb);
+        entry void reduce(CkCallback cb);
+	};
+
+};

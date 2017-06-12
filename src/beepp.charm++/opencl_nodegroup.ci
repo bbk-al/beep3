@@ -1,0 +1,8 @@
+module opencl_nodegroup {
+
+	nodegroup OpenCL_NodeGroup { 
+	  
+	    entry OpenCL_NodeGroup();
+	};
+
+};

@@ -1,0 +1,17 @@
+module parallel_fmm_octree {
+
+    template <typename CType, typename CProxy_FMMWorkerT> nodegroup ParallelFMMOctree { 
+        entry ParallelFMMOctree(unsigned int max_items_per_node,
+                                Vector universe_centre,
+                                double universe_edge_length,
+                                unsigned int,
+                                CkCallback);
+        entry [exclusive] void insert(std::vector<CType> items);
+        entry [exclusive] void insert(CType single);
+        entry void finalize(CkCallback cb);
+        entry void clear_waves();
+        entry [immediate] void request_data(CProxy_FMMWorkerT FMMWorkerProxy);
+        //entry void delegate_evaluations(std::vector<Vector>& eval_pts, CProxy_FMMWorkerT FMMWorkerProxy);
+    };
+    
+}; 

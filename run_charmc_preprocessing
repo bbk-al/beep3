@@ -1,0 +1,6 @@
+#!/bin/bash
+cd src/fmm.charm++
+charmc *.ci
+cd ../beepp.charm++
+charmc *.ci
+

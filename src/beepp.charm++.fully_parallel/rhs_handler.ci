@@ -1,0 +1,16 @@
+module rhs_handler {
+    
+    //extern module vanilla_fmm_evals;
+    
+    chare RHS_Handler { 
+        
+        entry RHS_Handler(unsigned int max_items_per_node, Vector universe_centre, double universe_edge_length);
+        entry void add_charges(std::vector<Charge> charges);
+        entry [threaded] void get_rhs(double Dsolvent, unsigned int, CkCallback cb);
+        entry void process_rhs_results_from_working_mesh(vanilla_fmm::Eval_Message *msg);
+    };
+
+    message RHS_Message {
+        double data[]; 
+    };
+}; 

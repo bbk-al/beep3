@@ -1,0 +1,27 @@
+<!DOCTYPE FilterScript>
+<FilterScript>
+ <filter name="Subdivision Surfaces: Butterfly Subdivision">
+  <Param type="RichInt" value="4" name="Iterations"/>
+  <Param type="RichAbsPerc" value="0.01" min="0" name="Threshold" max="71.0278"/>
+  <Param type="RichBool" value="false" name="Selected"/>
+ </filter>
+ <filter name="Quadric Edge Collapse Decimation" >
+  <Param tooltip="The desired final number of faces." description="Target number of faces" type="RichInt" value="TARGET_NUM_FACES" name="TargetFaceNum" />
+  <Param tooltip="If non zero, this parameter specifies the desired final size of the mesh as a percentage of the initial size." description="Percentage reduction (0..1)" type="RichFloat" value="0" name="TargetPerc" />
+  <Param tooltip="Quality threshold for penalizing bad shaped faces.&lt;br>The value is in the range [0..1]&#xa; 0 accept any kind of face (no penalties),&#xa; 0.5  penalize faces with quality &lt; 0.5, proportionally to their shape&#xa;" description="Quality threshold" type="RichFloat" value="0.95" name="QualityThr" />
+  <Param tooltip="The simplification process tries not to destroy mesh boundaries" description="Preserve Boundary of the mesh" type="RichBool" value="true" name="PreserveBoundary" />
+  <Param tooltip="Try to avoid face flipping effects and try to preserve the original orientation of the surface" description="Preserve Normal" type="RichBool" value="true" name="PreserveNormal" />
+  <Param tooltip="Each collapsed vertex is placed in the position minimizing the quadric error.&#xa; It can fail (creating bad spikes) in case of very flat areas. &#xa;If disabled edges are collapsed onto one of the two original vertices and the final mesh is composed by a subset of the original vertices. " description="Optimal position of simplified vertices" type="RichBool" value="true" name="OptimalPlacement" />
+  <Param tooltip="Add additional simplification constraints that improves the quality of the simplification of the planar portion of the mesh." description="Planar Simplification" type="RichBool" value="true" name="PlanarQuadric" />
+  <Param tooltip="Use the Per-Vertex quality as a weighting factor for the simplification. The weight is used as a error amplification value, so a vertex with a high quality value will not be simplified and a portion of the mesh with low quality values will be aggressively simplified." description="Weighted Simplification" type="RichBool" value="false" name="QualityWeight" />
+  <Param tooltip="After the simplification an additional set of steps is performed to clean the mesh (unreferenced vertices, bad faces, etc)" description="Post-simplification cleaning" type="RichBool" value="true" name="AutoClean" />
+  <Param tooltip="The simplification is applied only to the selected set of faces.&#xa; Take care of the target number of faces!" description="Simplify only selected faces" type="RichBool" value="false" name="Selected" />
+ </filter>
+ <filter name="Subdivision Surfaces: LS3 Loop">
+  <Param enum_val0="Loop" enum_val1="Enhance regularity" enum_cardinality="3" enum_val2="Enhance continuity" type="RichEnum" value="0" name="LoopWeight"/>
+  <Param type="RichInt" value="3" name="Iterations"/>
+  <Param type="RichAbsPerc" value="0.91727" min="0" name="Threshold" max="91.7273"/>
+  <Param type="RichBool" value="false" name="Selected"/>
+ </filter>
+</FilterScript>
+
