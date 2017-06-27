@@ -35,6 +35,12 @@ BEEP::BEEP(const ConfigFile& config,
 	cmdline_qual_points_per_triangle(cmdline_qual_points), 
 	cmdline_kappa(_cmdline_kappa),
 	force_planar(planar),
+#ifdef PREHYDROPHOBIC
+	resolve(true),
+	previd(1),	// Will be invalid on BEEP creation (as required)
+	prevloc(Vector(0,0,0)),
+	unrot(Quaternion(1,0,0,0)),
+#endif // PREHYDROPHOBIC
 	skipping_precalcs(false)
 {
     init(config);
@@ -50,6 +56,12 @@ BEEP::BEEP(const std::string& config_filename, bool planar, bool read_fh) :
     cmdline_qual_points_per_triangle(-1), 
     cmdline_kappa(-1),
     force_planar(planar),
+#ifdef PREHYDROPHOBIC
+	resolve(true),
+	previd(1),	// Will be invalid on BEEP creation (as required)
+	prevloc(Vector(0,0,0)),
+	unrot(Quaternion(1,0,0,0)),
+#endif // PREHYDROPHOBIC
     skipping_precalcs(false)
 {
     // parse xml config
@@ -98,13 +110,15 @@ BEEP::BEEP(const std::string& config_filename, bool planar, bool read_fh) :
             fh_input.close();
         }
         
-std::cout << "BEEP::BEEP read_fh calculate energies !!" << std::endl;
         calculate_energies();
         calculate_forces();
     }
 }
 
 void BEEP::init(const ConfigFile& config) {
+#ifndef PREHYDROPHOBIC
+	resolve = true;	// BEEP needs to solve
+#endif
     for (ConfigFile::MeshLibrary::const_iterator
 			it=config.mesh_library.cbegin(), end=config.mesh_library.cend();
 		 it != end; ++it)
@@ -201,6 +215,9 @@ Mesh& BEEP::load_library_mesh(const std::string& mtz_filename) {
 }
 
 void BEEP::clear_mesh_instances(unsigned int start, int end) {
+#ifndef PREHYDROPHOBIC
+	resolve = true;	// BEEP needs to solve
+#endif
 	// This allows python-like end-point specification with +1 increment
 	if (start >= meshes.size()) return;  // Silently ignore (as if already done)
 	if (end < 0) end = meshes.size() + 1 + end;
@@ -231,27 +248,59 @@ MeshInstance& BEEP::insert_mesh_instance(
 		? static_cast<unsigned int>(cmdline_qual_points_per_triangle)
 		: DEFAULT_QUALS;
 
-	return *meshes.add(mesh_lib_id, meshes.size(), 
-		               offset, rotation, protein_dielectric, Dsolvent,
-		               num_quad_points, num_qual_points);
+	unsigned int id = meshes.size();
+	MeshInstance& m = *meshes.add(mesh_lib_id, id, offset, rotation, 
+								  protein_dielectric, Dsolvent,
+								  num_quad_points, num_qual_points);
+#ifndef PREHYDROPHOBIC
+	resolve = true;				// BEEP needs to solve
+	m.update_energy(meshes);	// Revise non-electrostatic energies
+
+	// Store the reversion data
+	previd = meshes.size();		// No reversion is possible from an insert
+#endif
+	return m;
 }
 
 MeshInstance& BEEP::move_mesh_instance(
 	unsigned int id,
-	const Vector& translate, const Quaternion& rotate,
+	const Vector& offset, const Quaternion& rotation,
 	const double protein_dielectric)
 {
-#if 0
+	static const Quaternion no_rotation{Quaternion(1,0,0,0)};
+
+#ifdef MI_MOVE
     // check that the mesh id is valid
     if (id >= meshes.size()) {
         std::cerr << "Bad value for mesh instance_id: " << id
 			<< " (" << meshes.size() << " mesh instances defined)" << std::endl;
         throw std::exception();
     }
-	return meshes[id]->move(translate, rotate);
-#else  // if 0
-	return *meshes.move(id, translate, rotate, protein_dielectric, Dsolvent);
-#endif // if 0
+	// Ignore null moves
+	MeshInstance& m = *(meshes[id]);
+	Vector loc = m.get_xyz_offset();	// Copy
+	if (offset == loc && rotation == no_rotation) return m;
+
+	// Make the move
+	m.move(offset, rotation);
+#else  // MI_MOVE
+	MeshInstance& m = *meshes.move(id, offset, rotation,
+									protein_dielectric, Dsolvent);
+#endif // MI_MOVE
+#ifndef PREHYDROPHOBIC
+	// Energy updates are required
+	resolve = true;		// BEEP needs to solve
+	if (id == previd && offset == prevloc && rotation == unrot)
+		m.revert_energy(meshes); // This is a move reversal, revert quickly
+	else
+		m.update_energy(meshes); // Revise non-electrostatic energies now
+
+	// Store the reversion data
+	previd = id;
+	prevloc = loc;				// offset is absolute location
+	unrot = rotation.inverse();	// but rotation is relative
+#endif
+	return m;
 }
 
 int BEEP::get_instance_id(const Vector& pt, int skip_id) const {
@@ -266,51 +315,58 @@ int BEEP::get_instance_id(const Vector& pt, int skip_id) const {
 	return -1;  // Invalid id = no id TODO (should be a constexpr)
 }
 
+#ifdef FUTURE
+void BEEP::create_kinemage(
+	const std::string& filename,
+	int num_colours,
+	const std::string& preamble) const
+{
+	create_kinemage(filename, 0.0, 0.0, num_colours, preamble);
+}
+#endif
+
+// Future preference is discard this version, merge into above without scales
+// pybeep.py will then need updating
 void BEEP::create_kinemage(
 	const std::string& filename,
 	double fscale, double hscale, int num_colours,
 	const std::string& preamble) const
 {
-    // set unique id on each node patch
-    std::ostringstream buf_f;
-    std::ostringstream buf_h;
+    std::ostringstream buf_f, buf_sf, buf_h, buf_sh;
     buf_f << "@trianglelist {fvals} off\n";
     buf_h << "@trianglelist {hvals} \n";
-    for (MeshInstanceList::const_iterator
-			mit=meshes.cbegin(), mend=meshes.cend();
-		 mit != mend; ++mit)
-    {
-        const MeshInstance& minst = **mit;
-        if (minst.isSilent() == false) { 
-            minst.kinemage_fh_vals(fscale, hscale, num_colours, buf_f, buf_h);
-        }
+    buf_sf << "\n@trianglelist {silent-fvals} off\n";
+    buf_sh << "\n@trianglelist {silent-hvals} \n";
+#ifndef PREHYDROPHOBIC
+    std::ostringstream buf_hy, buf_s, buf_e, buf_he, buf_lj;
+    buf_hy << "\n@trianglelist {hydrophobicities} off\n";
+    buf_s << "\n@trianglelist {Lennard-Jones-sigma} off\n";
+    buf_e << "\n@trianglelist {Lennard-Jones-epsilon} off\n";
+    buf_he << "\n@trianglelist {Hydrophobic Effect} off\n";
+    buf_lj << "\n@trianglelist {Lennard-Jones} off\n";
+	double scales[7] = {0.0, 0.0, 0.0, 0.0, 0.0, fscale, hscale};
+#endif // PREHYDROPHOBIC
+    for (const auto& spmi: meshes) {
+        if (spmi->isSilent() == false)
+#ifdef PREHYDROPHOBIC
+            spmi->kinemage_fh_vals(fscale, hscale, num_colours, buf_f, buf_h);
+        else
+            spmi->kinemage_fh_vals(fscale, hscale, num_colours, buf_sf, buf_sh);
+#else
+            spmi->kinemage_vals(num_colours, buf_hy, buf_s, buf_e,
+								buf_he, buf_lj, buf_f, buf_h, scales);
+		else
+            spmi->kinemage_vals(num_colours, buf_hy, buf_s, buf_e,
+								buf_he, buf_lj, buf_sf, buf_sh, scales);
+#endif // PREHYDROPHOBIC
     }
-    buf_f << "\n@trianglelist {silent-fvals} off\n";
-    buf_h << "\n@trianglelist {silent-hvals} \n";
 
-    for (MeshInstanceList::const_iterator
-			mit=meshes.cbegin(), mend=meshes.cend();
-		 mit != mend; ++mit)
-    {
-        const MeshInstance& minst = **mit;
-        if (minst.isSilent() == true) { 
-            minst.kinemage_fh_vals(fscale, hscale, num_colours, buf_f, buf_h);
-        }
-    }
-    
     std::ostringstream charge_buf;
     charge_buf << "@spherelist {charges}\n";
-    for (MeshInstanceList::const_iterator
-			mit=meshes.cbegin(), mend=meshes.cend();
-		 mit != mend; ++mit)
-    {
-        const MeshInstance& minst = **mit;
-        for (std::vector< boost::shared_ptr<Charge> >::const_iterator
-				it = minst.get_charges().cbegin(),
-				end = minst.get_charges().cend();
-			 it != end; ++it)
-        {
-            const Charge& ch = **it;
+    for (const auto& spmi: meshes) {
+//TODO allCharges now?
+        for (const auto& spch: spmi->get_charges()) {
+            const Charge& ch = *spch;
             charge_buf << "r=" << ch.get_radius() << " {} "
 			           << ch.x << " " << ch.y << " " << ch.z << "\n";
         }
@@ -321,7 +377,16 @@ void BEEP::create_kinemage(
     kin_out << preamble << std::endl;
     kin_out << buf_f.str() << std::endl;
     kin_out << buf_h.str() << std::endl;
+    kin_out << buf_sf.str() << std::endl;
+    kin_out << buf_sh.str() << std::endl;
     kin_out << charge_buf.str() << std::endl;
+#ifndef PREHYDROPHOBIC
+    kin_out << buf_hy.str() << std::endl;
+    kin_out << buf_s.str() << std::endl;
+    kin_out << buf_e.str() << std::endl;
+    kin_out << buf_he.str() << std::endl;
+    kin_out << buf_lj.str() << std::endl;
+#endif // PREHYDROPHOBIC
     kin_out.close();
 }
 
@@ -374,6 +439,9 @@ std::string BEEP::benchmark() {
 }
 
 RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations) {
+#ifndef PREHYDROPHOBIC
+	resolve = false;	// BEEP is now calculating electrostatics...
+#endif
     vanilla_fmm_timer.zero();
     bem_fmm_timer.zero();
     
@@ -530,6 +598,10 @@ void BEEP::write_fh(const std::string& output_filename) {
 double BEEP::calculate_energies() {
     double total_E = 0.0;
 
+	// TODO would be nice to avoid any calculations if not required:
+	// i.e. add double base_energy to reset with resolve bool set true?
+	// Then resolve && base_energy != unset => return base_energy
+
     unsigned int offset=0;
     for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator
 			mit=meshes.cbegin(), mend=meshes.cend();
@@ -537,12 +609,20 @@ double BEEP::calculate_energies() {
     {
         const MeshInstance& m = **mit;
         if (m.isSilent()) continue;
+#ifdef PREHYDROPHOBIC
         total_E += m.calculate_energy(kappa, &f_lhs[offset], &h_lhs[offset]);
+#else
+		// If resolve required, then do not calculate electrostatics...
+        total_E += m.calculate_energy(!resolve, kappa,
+									  &f_lhs[offset], &h_lhs[offset]);
+
+#endif // PREHYDROPHOBIC
         offset += m.get_num_node_patches();
     }
     return total_E;
 }
 
+//TODO hydrophobic etc forces?
 void BEEP::calculate_forces() {
     unsigned int offset=0;
     std::cout << std::setprecision(6);
@@ -1098,6 +1178,7 @@ std::cout << "BEEP::set_rhs MAX FMM SIZE " << MAX_FMM_SIZE << std::endl;
         {
             const BasicNodePatch& np = **np_it;
             boost::shared_ptr<QuadList> qual_pts = np.get_qualocation_points();
+			// NB why not num_qps += qual_pts->cend() - qual_pts->cbegin() ??
             for (QuadList::const_iterator
 					qp_it = qual_pts->cbegin(), qp_end=qual_pts->cend();
 				 qp_it != qp_end; ++qp_it)
@@ -1367,7 +1448,7 @@ std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
             if ( detailed )
             cout<<"gmres("<<m<<")\t"<<io<<"\t"<<j<<"\t"<<y[j]<<"\t" << nrm2b*eps <<endl;
 
-        } while ( j<m && fabs(y[j])>=eps*nrm2b );
+        } while ( j<m && fabs(y[j])>eps*nrm2b );  // >= precludes 0 = 0
         { // minimiere bzgl Y
 			if (cblas_dasum(uij, U, 1) == 0 && cblas_dasum(j ,y, 1) == 0)
 				;// Solve Uy'=y where U,y=0 ... continuity as y->0 => y'=y
@@ -1399,7 +1480,6 @@ std::cout << "BEEP::gmres PRECONDITION defined" << std::endl;
         {
             MeshInstance& m = **mit;
             if (m.isSilent()) continue;
-std::cout << "BEEP::gmres preconditioned calculate_energies" << std::endl;
             total_E += m.calculate_energy
 								(kappa, &x[offset], &x[offset+num_patches]);
             offset += m.get_num_node_patches();

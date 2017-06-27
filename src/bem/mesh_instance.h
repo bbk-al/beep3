@@ -22,6 +22,9 @@
 #include <boost/shared_ptr.hpp>
 #include "../fmm/octree.h"
 #include "../fmm/fmm_octree.h"
+#include <unordered_set>
+
+class MeshInstanceList;
 
 class MeshInstance {
 
@@ -72,12 +75,21 @@ public:
 		return patches;
 	}
 
+#ifdef PREHYDROPHOBIC
     std::vector< boost::shared_ptr<Charge> >& get_charges() { return charges; }
-    const std::vector< boost::shared_ptr<Charge> >&
-    get_charges() const
-	{
+    const std::vector< boost::shared_ptr<Charge> >& get_charges() const {
 		return charges;
 	}
+#else
+    const std::vector<boost::shared_ptr<Charge>>&
+		get_charges(bool all = false) const
+	{
+		return all ? allCharges : charges;
+	}
+    std::vector<boost::shared_ptr<Charge>>& get_charges(bool all = false) {
+		return all ? allCharges : charges;
+	}
+#endif // PREHYDROPHOBIC
 
     unsigned int get_quad_points_per_triangle() const {
 		return quad_points_per_triangle;
@@ -89,15 +101,47 @@ public:
 	// get_ index methods
 	//NB choice of const/non-const is set in pybeep: could add variations here
     BasicNodePatch& get_node_patch(size_t idx) const { return *(patches[idx]); }
-    const Charge& get_charge(size_t idx) const { return *(charges[idx]); }
+#ifdef PREHYDROPHOBIC
+	const Charge& get_charge(size_t idx) const { return *(charges[idx]); }
+#else
+    const Charge& get_charge(size_t idx, bool all = false) const {
+		return all ? *(allCharges[idx]) : *(charges[idx]);
+	}
+#endif // PREHYDROPHOBIC
 
 	// get counts
-    inline unsigned int get_num_node_patches() const { return patches.size(); }
-    inline unsigned int get_num_charges() const { return charges.size(); }
+    unsigned int get_num_node_patches() const { return patches.size(); }
+#ifdef PREHYDROPHOBIC
+	unsigned int get_num_charges() const { return charges.size(); }
+#else
+    unsigned int get_num_charges(bool all = false) const {
+		return all ? allCharges.size() : charges.size();
+	}
+#endif // PREHYDROPHOBIC
+
+	// Local types
+	// An unordered set is used to detect repeat vertex hits in pt_triangle
+	// Need two unary function objects:
+	struct hashFunc{
+		size_t operator()(const Vector& v) const{
+			size_t s = 0;
+			for (int i = 0; i < 3; i++) boost::hash_combine(s, v(i));
+			return s;
+		}
+	};
+	struct equalsFunc{
+		bool operator()(const Vector& lhs, const Vector& rhs) const{
+			return (lhs.x == rhs.x) && (lhs.y == rhs.y) && (lhs.z == rhs.z);
+		}
+	};
+	using pt_set = std::unordered_set<Vector, hashFunc, equalsFunc>;
+	// Default map of hit vertices - must be reset by caller of pt_triangle
+	static pt_set pt_hitVertices;
 
 	// booleans
     bool isSilent() const { return silent; }
-    bool pt_is_internal(const Vector& pt) const;
+    bool pt_is_internal(const Vector& pt,
+					pt_set& hitVertices = MeshInstance::pt_hitVertices) const;
 
 	// get - other
     inline Vector get_h_squared() const;
@@ -122,10 +166,23 @@ public:
 	void set_unique_patch_id(unsigned int patch_ctr);
 
 	// Move the instance
-	int move(const Vector& translate, const Quaternion& rotate);
+#define MI_MOVE
+#ifndef MI_MOVE
+	[[deprecated("Method not working - use MeshInstanceList::move()")]]
+#endif
+	MeshInstance& move(const Vector& translate, const Quaternion& rotate);
+
+#ifndef PREHYDROPHOBIC
+	// Non-electrostatic energy
+	void update_energy(MeshInstanceList& mis);
+	void revert_energy(MeshInstanceList& mis);
+#endif // PREHYDROPHOBIC
      
 	// Calculations
     double calculate_energy(
+#ifndef PREHYDROPHOBIC
+		bool electrostatics,	// if false, only do non-electrostatic energy
+#endif // PREHYDROPHOBIC
 		double kappa,
 		double fvals[],
 		double hvals[]) const;
@@ -145,12 +202,43 @@ public:
 		KahanVector& dbf,
 		KahanVector& ionic) const;
                           
-    void kinemage_fh_vals(
+#ifndef PREHYDROPHOBIC
+	// For backward compatibility only
+	[[deprecated("Use kinemage_vals() instead with defaulted scales")]]
+#endif
+	void kinemage_fh_vals(
 		double fscale,
 		double hscale,
 		int num_colours,
-		std::ostringstream& fbuf,
-		std::ostringstream& hbuf) const;
+		std::ostringstream& buf_f,
+		std::ostringstream& buf_h) const;
+
+	void kinemage_vals(
+		int num_colours,
+#ifndef PREHYDROPHOBIC
+		std::ostringstream& buf_hy,
+		std::ostringstream& buf_s,
+		std::ostringstream& buf_e,
+		std::ostringstream& buf_he,
+		std::ostringstream& buf_lj,
+#endif // PREHYDROPHOBIC
+		std::ostringstream& buf_f,
+		std::ostringstream& buf_h) const;
+
+	// Allow caller to specify scales, to support backward compatibility...
+	template<unsigned int S>
+	void kinemage_vals(
+		int num_colours,
+#ifndef PREHYDROPHOBIC
+		std::ostringstream& buf_hy,
+		std::ostringstream& buf_s,
+		std::ostringstream& buf_e,
+		std::ostringstream& buf_he,
+		std::ostringstream& buf_lj,
+#endif // PREHYDROPHOBIC
+		std::ostringstream& buf_f,
+		std::ostringstream& buf_h,
+		double (&scale)[S]) const;	// S must match buf arg count
 
 //NB is const really valid?
 	bool init_fh_vals(double *x, unsigned int& xctr,
@@ -165,7 +253,18 @@ private:
 
     inline void set_quad_points();
     inline void set_qual_points();
+#if 1 // TESTING BOTH pt_is_internal METHODS else delete and re-enable DELETED
+//#ifdef DELETED
 	void reset_mesh_tree();
+#endif // DELETED
+#ifndef PREHYDROPHOBIC
+	unsigned int resize_pot(unsigned int n);
+	double calculate_boundary_energy(	//! Non-electrostatic energies
+		BasicNodePatch& np,			//!\param The patch to calculate for
+		const MeshInstance& omi,	//!\param The impinging MeshInstance
+		std::vector<unsigned int>& track,	//!\param omi.patches.size(), all 0
+		pt_set& hitVertices = pt_hitVertices); //!\param Detect vertex repeats
+#endif // PREHYDROPHOBIC
 
 	// Attributes
     bool silent;
@@ -181,22 +280,33 @@ private:
     
     std::vector< boost::shared_ptr<BasicNodePatch> > patches;
     mutable std::vector< boost::shared_ptr<Charge> > charges;
+#ifndef PREHYDROPHOBIC
+    mutable std::vector< boost::shared_ptr<Charge> > allCharges;
+#endif // PREHYDROPHOBIC
 
+#ifdef DELETED // redundant - pt_is_internal uses a different method
     boost::scoped_ptr< Octree< Node<BasicNodePatch>, BasicNodePatch > >
 		mesh_tree;
+#endif // DELETED
     mutable boost::scoped_ptr< fmm::FMM_Octree_6FIG_ACCURACY > charge_fmm_tree;
     
     unsigned int quad_points_per_triangle;
     unsigned int qual_points_per_triangle;
 
-//#define USING_MAXD 1
-#ifdef USING_MAXD  // maxd no longer required
+#ifndef PREHYDROPHOBIC
+	// Non-initialised  i.e. reset when used
+	std::vector<double> pot[2];	// To hold non-electrostatic potentials
+	unsigned int psel;			// To select which pot to use (current or old)
+	double hea;					// Hydrophobic area in range
+#endif // PREHYDROPHOBIC
+
+#ifdef USING_MAXD  // maxd no longer required -- see mesh_instance.cpp-old
 	// maximum dimension of a triangle for x and y directions
 	std::unique_ptr<double[]> maxd;
 #endif // maxd
 };
 
-#ifdef __DELETED__
+#ifdef DELETED
 typedef std::vector< boost::shared_ptr<MeshInstance> > MeshInstanceList;
 #else
 class MeshInstanceList : public std::vector< boost::shared_ptr<MeshInstance> >
@@ -222,6 +332,9 @@ public:
             double Dprotein, double Dsolvent,
             unsigned int num_quad_points, unsigned int num_qual_points,
             bool _silent=false);
+#ifdef MI_MOVE
+	[[deprecated("No support for hydrophobicity - use MeshInstance::move()")]]
+#endif
 	boost::shared_ptr<MeshInstance>
 	move(unsigned int mesh_instance_id,
 		 const Vector& offset, const Quaternion& rotation,
@@ -249,18 +362,26 @@ inline MeshInstance::MeshInstance(const MeshInstance& other) :
         rotation(other.rotation), 
         radius(other.radius),
         mesh_ptr(other.mesh_ptr),
+#ifndef PREHYDROPHOBIC
+		psel(other.psel),
+#endif // PREHYDROPHOBIC
+#ifdef USING_MAXD  // maxd no longer required
+		maxd(std::make_unique<double[]>(2)), // Each copy must have own version
+#endif // maxd
         quad_points_per_triangle(other.quad_points_per_triangle),
         qual_points_per_triangle(other.qual_points_per_triangle)
-#ifdef USING_MAXD  // maxd no longer required
-		,maxd(std::make_unique<double[]>(2)) // Each copy must have own version
-#endif // maxd
 {
-//NB emplace?
 	patches.insert(patches.end(), other.patches.begin(), other.patches.end());
 	charges.insert(charges.end(), other.charges.begin(), other.charges.end());
+#ifndef PREHYDROPHOBIC
+	allCharges.insert(allCharges.end(),
+					  other.allCharges.begin(), other.allCharges.end());
+	for (int p = 0; p < 2; p++)
+		pot[p].insert(pot[p].end(), other.pot[p].begin(), other.pot[p].end());
+#endif // PREHYDROPHOBIC
 }
     
-//NB should use std::move here? And emplace?
+//TODO should use std::move here
 inline MeshInstance::MeshInstance(MeshInstance&& other) : 
         instance_id(other.instance_id), 
         silent(other.silent), 
@@ -270,15 +391,25 @@ inline MeshInstance::MeshInstance(MeshInstance&& other) :
         rotation(other.rotation), 
         radius(other.radius),
         mesh_ptr(other.mesh_ptr),
+#ifndef PREHYDROPHOBIC
+		psel(other.psel),
+#endif // PREHYDROPHOBIC
+#ifdef USING_MAXD  // maxd no longer required
+		maxd(std::move(other.maxd)),	// Ok to move values
+#endif // maxd
         quad_points_per_triangle(other.quad_points_per_triangle),
         qual_points_per_triangle(other.qual_points_per_triangle)
-#ifdef USING_MAXD  // maxd no longer required
-		,maxd(std::move(other.maxd))	// Ok to move values
-#endif // maxd
 {
 //NB emplace?
+//TODO move constructor should do better than this - default?
 	patches.insert(patches.end(), other.patches.begin(), other.patches.end());
 	charges.insert(charges.end(), other.charges.begin(), other.charges.end());
+#ifndef PREHYDROPHOBIC
+	allCharges.insert(allCharges.end(),
+					  other.allCharges.begin(), other.allCharges.end());
+	for (int p = 0; p < 2; p++)
+		pot[p].insert(pot[p].end(), other.pot[p].begin(), other.pot[p].end());
+#endif // PREHYDROPHOBIC
 }
     
 inline Vector MeshInstance::get_h_squared() const {

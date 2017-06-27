@@ -47,7 +47,7 @@ const std::string MeshTarball::ECM_TAG = "ecm";
 
 void MeshTarball::init() {
 	// first change directory to a safe working location
-#ifdef __DELETED__
+#ifdef DELETED
     char work_dir_template[] = "tmpdir.XXXXXX";
     char* d = (mkdtemp(work_dir_template));
     if (d != nullptr) {
@@ -73,18 +73,18 @@ void MeshTarball::init() {
 //     }
 
     // extract the contents of the mesh tarball
-#ifdef __DELETED__
+#ifdef DELETED
     chdir(work_dir.c_str());
     extract("../" + mtz_filename);
     chdir("..");
-#else // __DELETED__
+#else // DELETED
 	fs::path cwd{fs::current_path()};
 	fs::path mtz{mtz_filename};
 	if (mtz.is_relative()) mtz = cwd / mtz;
 	fs::current_path(work_dir);
 	extract(mtz.string());
 	fs::current_path(cwd);
-#endif // __DELETED__
+#endif // DELETED
 
     // try to parse "definition.xml"
     parse_definition_xml();
@@ -193,11 +193,11 @@ void MeshTarball::parse_definition_xml()
 {
 
     // Open the xml config file and parse it
-#ifdef __DELETED__
+#ifdef DELETED
     std::string xml = work_dir + "/" + MESH_DEFINITION_XML;
 #else
     std::string xml = work_dir.string() + "/" + MESH_DEFINITION_XML;
-#endif // __DELETED__
+#endif // DELETED
     TiXmlDocument doc(xml.c_str());
     bool loadOkay = doc.LoadFile();
     bool failed = false;

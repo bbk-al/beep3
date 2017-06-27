@@ -72,10 +72,10 @@ public:
     virtual ~VectorT() = default;
 
 	//! Constructors from superclass
-#ifdef __DELETED__
+#ifdef DELETED
     VectorT(const __Vector<float>& other) : super(other.x, other.y, other.z) {}
     VectorT(const __Vector<double>& other) : super(other.x, other.y, other.z) {}
-#else //  __DELETED__
+#else //  DELETED
 	//! It is the responsibility of the caller to ensure that NewTypeT can
 	//! sensibly cast to PrecisionType
 
@@ -93,14 +93,14 @@ public:
 			std::move(static_cast<PrecisionType>(other.y)),
 			std::move(static_cast<PrecisionType>(other.z)))
 	{}
-#endif //  __DELETED__
+#endif //  DELETED
 
 	//! Assignment from other type
     template<typename NewTypeT>
     inline thisType& operator=(const __Vector<NewTypeT>& other);
 
     //! Direct Vector cast
-#ifdef __DELETED__
+#ifdef DELETED
     template<typename another>
     operator VectorT<another>() const {
         VectorT<another> tmp(static_cast<PrecisionType>(super::x),
@@ -108,10 +108,10 @@ public:
                              static_cast<PrecisionType>(super::z));
         return tmp;
     }
-#else // __DELETED__
+#else // DELETED
 	template <typename NewTypeT>
 	inline operator VectorT<NewTypeT>();
-#endif //  __DELETED__
+#endif //  DELETED
 
 	//! Constructor from coordinate values
     VectorT(PrecisionType _x, PrecisionType _y, PrecisionType _z) {
@@ -153,13 +153,13 @@ public:
                         super::y + other.y, 
                         super::z + other.z);
     }
-#ifdef __DELETED__
+#ifdef DELETED
     thisType __py_add(const thisType &other) const {
         return thisType(super::x + other.x, 
                         super::y + other.y, 
                         super::z + other.z);
     }
-#endif //  __DELETED__
+#endif //  DELETED
 
     template<typename NewTypeT>
     thisType operator-(const __Vector<NewTypeT>& other) const {
@@ -167,13 +167,13 @@ public:
                         super::y - other.y, 
                         super::z - other.z);
     }
-#ifdef __DELETED__
+#ifdef DELETED
     thisType __py_subtract(const thisType &other) const {
         return thisType(super::x - other.x, 
                         super::y - other.y, 
                         super::z - other.z);
     }
-#endif //  __DELETED__
+#endif //  DELETED
 
 	//! Addition and subtraction by other types
 	//! Responsibility of caller to ensure the casts are sensible.
@@ -196,12 +196,12 @@ public:
 
     inline std::string kinemage() const;
 
-#ifdef __DELETED__  // Now defined in pybeep.cpp
+#ifdef DELETED  // Now defined in pybeep.cpp
     void py_change_coordinate_frame(const thisType& centre_of_rotation, const Quaternion& rot, const thisType& centre_of_rotation_in_new_frame)
 	{
 		change_coordinate_frame(centre_of_rotation, rot, centre_of_rotation_in_new_frame);
 	}
-#endif // __DELETED__
+#endif // DELETED
 
     // express this point as defined by the centre of rotation in the new 
     // frame; rot is a rotation operator from the old coordinate frame into
@@ -221,10 +221,10 @@ public:
     // for applying quaternions to vectors
     inline thisType apply_rotation(const Quaternion& rot) const;
 
-#ifdef __DELETED__  // Now defined in pybeep.cpp
+#ifdef DELETED  // Now defined in pybeep.cpp
     // another alias for applyig a rotation- boost.python no good with overloaded funcs though
     inline void apply_quaternion(const Quaternion& rot) { apply_rotation(rot); }
-#endif  //  __DELETED__
+#endif  //  DELETED
 
 };
 
@@ -304,6 +304,11 @@ public:
     virtual ~Quaternion() = default;
 
 	// Useful operations
+    bool operator==(const Quaternion& q) const { return equals(*this, q); }
+    bool operator!=(const Quaternion& q) const { return !equals(*this, q); }
+	bool equals(const Quaternion& q1, const Quaternion& q2) const {
+		return (q1.a == q2.a && q1.b == q2.b && q1.c == q2.c && q1.d == q2.d);
+	}
     Quaternion conjugate() const { return Quaternion(a,-b,-c,-d); }
     Quaternion inverse() const { return conjugate() / norm2(); }
     

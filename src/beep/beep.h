@@ -150,6 +150,12 @@ public:
 	  cmdline_qual_points_per_triangle(cmdline_quals), 
 	  cmdline_kappa(screening_kappa), 
 	  force_planar(planar),
+#ifdef PREHYDROPHOBIC
+	  resolve(true),
+	  previd(1),	// Will be invalid on BEEP creation (as required)
+	  unloc(Vector(0,0,0)),
+	  unrot(Quaternion(1,0,0,0)),
+#endif // PREHYDROPHOBIC
 	  skipping_precalcs(false)
 	{ }
 
@@ -178,6 +184,12 @@ public:
 	  cmdline_qual_points_per_triangle(other.cmdline_qual_points_per_triangle),
 	  cmdline_kappa(other.cmdline_kappa), 
 	  force_planar(other.force_planar),
+#ifdef PREHYDROPHOBIC
+	  resolve(other.resolve),
+	  previd(other.previd),
+	  unloc(other.unloc),
+	  unrot(other.unrot),
+#endif // PREHYDROPHOBIC
 	  skipping_precalcs(false),
 #ifndef __DELETED__
 //NB Lose comma above if restoring original
@@ -220,8 +232,8 @@ public:
 	//! Move a mesh instance
 	MeshInstance& move_mesh_instance(
 		unsigned int instance_id,
-	    const Vector& translate,
-		const Quaternion& rotate,
+	    const Vector& location,
+		const Quaternion& rotation,
 		double dielectric);
 	//! Check if a point is inside a MeshInstance (other than skip_id)
 	int get_instance_id(const Vector& pt, int skip_id = -1) const;
@@ -230,6 +242,11 @@ public:
     void create_kinemage(const std::string& filename,
 	                     double fscale, double hscale, int num_colours,
 	                     const std::string& preamble) const;
+#ifdef FUTURE
+	//! Preferred version - scales are worked out by this call
+    void create_kinemage(const std::string& filename,
+	                     int num_colours, const std::string& preamble) const;
+#endif // FUTURE
     
     RunInfo solve(double gmres_stop_criteria, int max_iterations);
     std::string benchmark();
@@ -324,6 +341,15 @@ private:
     bool force_planar;
     bool skipping_precalcs;
 
+#ifndef PREHYDROPHOBIC
+	// Flag to track whether solve() is required
+	bool resolve;
+	// Reversion data
+	unsigned int previd;
+	Vector prevloc;
+	Quaternion unrot;
+
+#endif // PREHYDROPHOBIC
 	// Timers
     fmm::TimeInfo vanilla_fmm_timer;
     fmm::TimeInfo bem_fmm_timer;

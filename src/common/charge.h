@@ -42,9 +42,15 @@ public:
     ~Charge() = default;						//! Destructor
 
 	//! Constructors from vector and charge
+#ifdef PREHYDROPHOBIC
     Charge(const Vector& v, double ch) : Vector(v), charge(ch), radius(0) {}
     Charge(const Vector& v, double ch, double r)
 	: Vector(v), charge(ch), radius(r) {}
+#else // PREHYDROPHOBIC
+    Charge(const Vector& v, double ch, double r = 0.0, double hy = 0.0, double s = 0.0, double e = 0.0)
+	: Vector(v), charge(ch), radius(r),
+		hydrophobicity(hy), sigma(s), epsilon(e) {}
+#endif // PREHYDROPHOBIC
 
 	//! Variant copy constructor with translation and rotation applied
     Charge(const Charge& other,
@@ -53,6 +59,11 @@ public:
            const Vector& xyz_offset) :
            Vector(other),
            charge(other.charge),
+#ifndef PREHYDROPHOBIC
+			hydrophobicity(other.hydrophobicity),
+			sigma(other.sigma),
+			epsilon(other.epsilon),
+#endif // PREHYDROPHOBIC
            radius(other.radius)
     {
         Vector::change_coordinate_frame(centre_of_rotation, rot, xyz_offset);
@@ -68,6 +79,11 @@ public:
     double& get_charge() { return charge; }
     double get_radius() const { return radius; }
     double& get_radius() { return radius; }
+#ifndef PREHYDROPHOBIC
+    double get_hydrophobicity() const { return hydrophobicity; }
+    double get_sigma() const { return sigma; }
+    double get_epsilon() const { return epsilon; }
+#endif // PREHYDROPHOBIC
 
 	//NB Argument is ignored??
     double get_charge(int) const { return charge; }
@@ -89,6 +105,11 @@ public:
 
     double charge;
     double radius;
+#ifndef PREHYDROPHOBIC
+	double hydrophobicity;	// values assigned
+	double sigma;			//   via hydro.py
+	double epsilon;			//   in xyzqr(h) file
+#endif // PREHYDROPHOBIC
 };
 
 typedef Charge CharmChargeHolder;
@@ -108,18 +129,36 @@ inline double Charge::read_charges_from_file(
 
 	// read in xyzr data, and create charges
 	double x,y,z,charge,rad;
+#ifdef PREHYDROPHOBIC
 	while(xyzqr_file >> x >> y >> z >> charge >> rad) {
 		// ignore rest of the line...
 		xyzqr_file.ignore( std::numeric_limits<std::streamsize>::max(), '\n' );
+#else // PREHYDROPHOBIC
+	double hyd, sig, eps;
+	std::string str;
+	std::istringstream is;
+	while (std::getline(xyzqr_file, str)) {
+		is.clear();	// Needed to reset after reading past end of string
+		is.str(str);
+		hyd = 0.0;	// will not be overwritten if field is absent
+		sig = 0.0;
+		eps = 0.0;
+		is >> x >> y >> z >> charge >> rad
+		   >> hyd >> sig >> eps;
+#endif // PREHYDROPHOBIC
 
 		// skip zero charges
 		if (skip_zeroes && charge == 0.0) continue;
 
 		net_charge += charge;
 
+#ifdef PREHYDROPHOBIC
 		Charge ch(Vector(x,y,z), charge, rad);
+#else
+		Charge ch(Vector(x,y,z), charge, rad, hyd, sig, eps);
+#endif // PREHYDROPHOBIC
 
-		//std::cout << " Charge magnitude " << charge << " at " << x << " " << y << " " << z << std::endl;
+		//std::cout << " Charge magnitude " << charge << ", hydrophobicity " << hyd << ", sigma " << sig << " epsilon " << eps << " at " << x << " " << y << " " << z << std::endl;
 		charges.push_back(ch);
 	}
 

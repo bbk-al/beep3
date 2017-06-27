@@ -7,9 +7,13 @@
  */
 
 #include "mesh_instance.h"
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
 #include <iostream>
 #include <iomanip>
-#include <unordered_map>
+#include <unordered_set>
 
 
 MeshInstance::MeshInstance(
@@ -27,11 +31,11 @@ MeshInstance::MeshInstance(
 		silent(_silent),
 		xyz_offset(offset),
 		rotation(rot),
+#ifndef PREHYDROPHOBIC
+		psel(0),
+#endif // PREHYDROPHOBIC
 		quad_points_per_triangle(num_quad_points),
 		qual_points_per_triangle(num_qual_points)
-#ifdef USING_MAXD  // maxd no longer required
-		,maxd(std::make_unique<double[]>(2))
-#endif // maxd
 {
     // rather essential- copy the shared_ptr to the underlying mesh type!
     assert(mesh_lib_id <= mesh_library.size());
@@ -55,31 +59,46 @@ void MeshInstance::init()
     {
         // copy the node patches from the reference mesh
         // create the NodePatch but immediately store it as a pointer to the
-        // base class
+        // base class;  the NodePatch constructor does change_coordinate_frame.
+        // It is important that order matches library mesh.
         boost::shared_ptr<BasicNodePatch> ptr(new NodePatch(*it, *this)); 
         patches.push_back(ptr);
     }
 
     // set Charges
     charges.clear();
+#ifdef PREHYDROPHOBIC
     const std::vector<Charge>& library_charges = mesh.get_charges();
+#else
+    const std::vector<Charge>& library_charges = mesh.get_charges(true);
+#endif // PREHYDROPHOBIC
     for (std::vector<Charge>::const_iterator
 			it=library_charges.cbegin(), end=library_charges.cend();
 		 it != end; ++it)
     {
-        boost::shared_ptr<Charge> ptr(
+		boost::shared_ptr<Charge> ptr(
 			new Charge(*it, mesh.get_centre(), rotation, xyz_offset)
 		);
-        charges.push_back(ptr);
+#ifdef PREHYDROPHOBIC
+		charges.push_back(ptr);
+#else
+		// Important: the same underlying charge is referenced twice!
+		allCharges.push_back(ptr);	// Copy
+		if ((*it).charge != 0) charges.push_back(std::move(ptr));	// Move
+#endif // PREHYDROPHOBIC
     }
     
     // set radius
     radius = mesh.get_radius();
 
+#ifdef DELETED
     // create a simple octree of the mesh instance (for collision / grid checks)
 	reset_mesh_tree();
+#endif // DELETED
 }
 
+#ifdef DELETED
+// redundant as pt_is_internal uses different method
 void MeshInstance::reset_mesh_tree() {
     mesh_tree.reset(new Octree< Node<BasicNodePatch>, BasicNodePatch >
 						(10, xyz_offset, radius*4.) );
@@ -89,38 +108,21 @@ void MeshInstance::reset_mesh_tree() {
         mesh_tree->add(*it);
     }
 }
+#endif
 
 // Does a line // to z-axis in +ve direction from pt pass through triangle tv?
 // This local function and object makes it easier to test simple cases
-// An unordered map is OTT but why not?  See onedge handling in pt_triangle...
-// Need two unary function objects:
-struct hashFunc{
-    size_t operator()(const Vector &v) const{
-        size_t s = 0;
-        for (int i = 0; i < 3; i++) boost::hash_combine(s, v(i));
-        return s;
-    }
-};
-struct equalsFunc{
-    bool operator()(const Vector& lhs, const Vector& rhs) const{
-        return (lhs.x == rhs.x) && (lhs.y == rhs.y) && (lhs.z == rhs.z);
-    }
-};
-// Map of hit vertices - must be reset by caller of pt_triangle
-static std::unordered_map<Vector, bool, hashFunc, equalsFunc> hitVertices;
 
 // Determine if z-line from pt crosses triangle
-static bool pt_triangle(const Vector& pt, const Vector* tv, int zdir) {
+// NB z-line is here generalised to any semi-infinite line.
+// Note ptr may not be changed if the z-line never reaches the triangle plane
+// and if ptr is provided the caller must check for repeat hits.
+static bool pt_triangle2(const Vector& pt, const Vector* tv, const Vector& z,
+				 MeshInstance::pt_set& hitVertices, Vector *ptr = nullptr)
+{
 	constexpr unsigned int perm[6] = { 1, 2, 2, 0, 0, 1 };
-	const Vector z = Vector(0,0,zdir);	// z-line used as indexing is neater
+	static const Vector origin = Vector(0,0,0);
 	int i;		// general index
-
-	// Check straddles
-	for (i = 0; i < 2; i++) {
-		auto il = {tv[0](i),tv[1](i),tv[2](i)};
-		if (pt(i) < std::min<double>(il) || pt(i) > std::max<double>(il)) break;
-	}
-	if (i < 2) return false;
 
 	// Find intersection of z-line with triangle plane
 	for (i = 0; i < 3; i++) if (tv[i] != pt) break;
@@ -133,25 +135,56 @@ static bool pt_triangle(const Vector& pt, const Vector* tv, int zdir) {
 	// normal to node patch no use here - get a normal to triangle
 	Vector n = (tv[2]-tv[1]).cross(tv[1]-tv[0]);
 	Vector pz;
-	if (z.dot(n) == 0.0) {
-		if ((v-pt).dot(n) == 0.0)
-			pz = pt;
+	double zdotn = z.dot(n);
+	Vector q, r;
+	// find a point in the plane that lies on the z-line from pt
+	if (zdotn == 0.0) {				// z-dir is in the triangle's plane
+		if ((v-pt).dot(n) == 0.0) {	// pt is also in the plane
+			pz = pt;				// so use pt as the point in the plane
+			// If the caller asked for the nearest point on the triangle but the
+			// z-direction was in the plane, need to calculate the nearest point
+			if (ptr) {
+				// For each edge, find the nearest point in z-dir
+				double d, dmin = (tv[3]-pt).length2();
+				*ptr = tv[3];	// Just an initial point to be improved upon
+				for (i = 0; i < 3; i++) {
+					// Reduce the problem to 2 or 1 dimensions
+					q = (tv[perm[2*i]] - tv[i]).normalised();  // not 0,0,0
+					double zdotq = z.dot(q);
+					r = (z-q*zdotq);		// orthogonal to q
+					if (r == origin) {
+						// Simple linear problem along q from tv[i]
+						pz = tv[i];	// other vertices consided in loop
+					}
+					else {
+						r = r.normalised();
+						// 2-D problem, line1 = tv[i] + a q;  line2 = pt + b r
+						// Intersect at:
+						pz = pt + z*r.dot(tv[i]-pt)/sqrt(1-(zdotq)*(zdotq));
+					}
+					d = (pz-pt).length2();
+					if (d < dmin) {
+						dmin = d;
+						*ptr = pz;
+					}
+				}
+			}
+		}
 		else
-			return false;
+			return false;			// cannot cross triangle if pt not in plane
 	}
-	else {
-		double dz = ((v-pt).dot(n) / z.dot(n));
-		if (dz < 0) return false;  // z-line is _semi_-infinite
+	else {							// z-dir is not in the plane
+		double dz = ((v-pt).dot(n) / zdotn);
+		if (dz < 0) return false;	// (z-line is _semi_-infinite)
 		pz = dz * z + pt;
+		if (ptr) *ptr = pz;
 	}
 
 	// Is pz in any of the half-planes that define the triangle?
 	// In addition, for any triangle that is crossed at a vertex or edge,
 	// there will be other triangles that are crossed at the same place.
-	// This needs detecting to avoid multiple counts.  Although less than
-	// half the triangles at this stage will be crossed, it is efficient
+	// This needs detecting to avoid multiple counts.  Although less than // half the triangles at this stage will be crossed, it is efficient
 	// to carry out the vertex/edge checks here rather than later.
-	Vector q, r;
 	double dot;
 	double onedge = -1.0;
 	for (i = 0; i < 3; i++) {
@@ -168,18 +201,22 @@ static bool pt_triangle(const Vector& pt, const Vector* tv, int zdir) {
 		q = q - q.dot(n) * n;
 		r = r - r.dot(n) * n;
 #ifdef LOCAL_TEST // DEBUG
-std::cout << "MeshInstance~pt_triangle pt=" << pt << " pz=" << pz
-		<< " T=" << tv[0] << "," << tv[1] << "," << tv[2]
-		<< " n=" << n << " q=" << q << " r=" << r << " s=" << q.dot(r)
-		<< std::endl;
+		std::cout << "MeshInstance~pt_triangle pt=" << pt << " pz=" << pz
+				<< " T=" << tv[0] << "," << tv[1] << "," << tv[2]
+				<< " n=" << n << " q=" << q << " r=" << r << " s=" << q.dot(r)
+				<< std::endl;
 #endif // DEBUG
 		// If these normals are opposed, then pz is outside triangle
 		if (q.dot(r) < 0) break;
 	}
+	// If loop did not complete then pt is outside triangle
 	if (i < 3) return false;
-	if (onedge < 0.0) return true;
 
-	// We have a crossing, but it was on a shared edge or vertex...
+	// We have a crossing, but if on an edge, then need to check for repeats.
+	// However, that is up to the caller if they asked for the nearest hit.
+	if (ptr || onedge < 0.0) return true;	// Strictly inside triangle
+
+	// Check for repeat hits
 	if (onedge == 0.0) {	// Hit a vertex!  Immensely unlikely!
 		// This is actually quite annoying.  The only way to avoid repeats
 		// is to maintain a list of hits;  but that list must be reset
@@ -187,18 +224,92 @@ std::cout << "MeshInstance~pt_triangle pt=" << pt << " pz=" << pz
 		// Since this function is local to the module for the one purpose,
 		// (which makes testing it easier) it makes sense to let pt_is_internal
 		// reset the list itself...
-std::cout << "MeshInstance~pt_triangle Way-hey! Hit a vertex!!" << std::endl;
-		if (hitVertices.count(v) > 0) return false;  // Seen it already
-		hitVertices[v] = true;	// Dummy value, key is the key
+		// First, though, check we did actually hit a vertex - precision?
+		for (i = 0; i < 3; i++) if (tv[i] == pz) break;
+		if (i >= 3) {
+			std::cout << "MeshInstance::pt_is_internal confused! "
+					  << pz << " " << tv[0] << " " << tv[1] << " " << tv[2]
+					  << std::endl;
+			std::cerr << "MeshInstance::pt_is_internal confused! Carrying on "
+					  << std::endl;
+			return true;
+		}
+std::cout << "MeshInstance~pt_triangle Way-hey! Hit a vertex!! " <<  pt << ": " << pz << "=" << tv[i] << std::endl;
+		if (hitVertices.count(pz) > 0) return false;  // Seen it already
+std::cout << "MeshInstance~pt_triangle new hit" << std::endl;
+		hitVertices.insert(pz);
 		return true;
 	}
-std::cout << "MeshInstance~pt_triangle Hey! Hit an edge!" << std::endl;
+std::cout << "MeshInstance~pt_triangle Hey! Hit an edge! " << pt << std::endl;
 	// Not a vertex, so strictly an edge - this is easy!  Always hit twice...
 	static bool flip = false;
 	flip = !flip;	// This trick is only an issue if caller needs to identify
 	return flip;	// each triangle that is hit;  this just ensures half count.
 }
 
+// This is the efficient version for just testing internality
+static bool pt_triangle(const Vector& pt, const Vector* tv, int zdir,
+						MeshInstance::pt_set& hitVertices)
+{
+	const Vector z = Vector(0,0,zdir);	// z-line used as indexing is neater
+	int i;		// general index
+
+	// Check straddles
+	for (i = 0; i < 2; i++) {
+		auto il = {tv[0](i), tv[1](i), tv[2](i)};
+		if (pt(i) < std::min<double>(il) || pt(i) > std::max<double>(il)) break;
+	}
+	if (i < 2) return false;
+
+	return pt_triangle2(pt, tv, z, hitVertices);
+}
+
+// General version to get the nearest node patch in a given direction
+// See pt_triangle2 for parameters
+static bool pt_triangle(const Vector& pt, const Vector* tv, const Vector& z,
+						MeshInstance::pt_set& hitVertices,
+						Vector *ptr = nullptr)
+{
+	constexpr unsigned int perm[6] = { 1, 2, 2, 0, 0, 1 };
+	int i;		// general index
+
+	// Although more complicated than the version above, it is still much
+	// more efficient to check for straddling than to skip it.
+	// Find two normals to z in plane including origin
+	for (i = 0; i < 3; i++) if (z(i) != 0.0) break;
+	if (i >= 3) {
+		// Trick question - null z
+		std::cerr << "MeshInstance pt_triangle(pt,tv,z) null z" << std::endl;
+		std::cout << "MeshInstance pt_triangle(pt,tv,z) null z" << std::endl;
+		throw std::exception();
+	}
+	double znc[3];
+	znc[i] = 0.0;
+	znc[perm[2*i]] = z(perm[2*i+1]);
+	znc[perm[2*i+1]] = -z(perm[2*i]);
+	if (znc[0] == 0.0 && znc[1] == 0.0 && znc[2] == 0.0) {
+		// Only one coordinate was non-zero
+		znc[perm[2*i]] = 1.0;
+		znc[perm[2*i+1]] = 0.0;
+	}
+
+	Vector zn[2];
+	zn[0] = Vector(znc[0], znc[1], znc[2]);
+	zn[1] = z.cross(zn[0]);
+
+	// Check straddles - now very similar to the simple case above
+	for (i = 0; i < 2; i++) {
+		auto il = {zn[i].dot(tv[0]), zn[i].dot(tv[1]), zn[i].dot(tv[2])};
+		double ptn = zn[i].dot(pt);
+		if (ptn < std::min<double>(il) || ptn > std::max<double>(il)) break;
+	}
+	if (i < 2) return false;
+
+	return pt_triangle2(pt, tv, z, hitVertices, ptr);
+}
+
+
+#ifdef DELETED
 bool MeshInstance::pt_is_internal(const Vector& pt) const {
 // Alas, the simple algorithm deleted below does not work for meshes - the
 // fix would require finding the nearest point on the triangle plane, then
@@ -209,90 +320,56 @@ bool MeshInstance::pt_is_internal(const Vector& pt) const {
     // inside the mesh instance
     if ((pt - xyz_offset).length() >= radius) return false;
 
-#if 1 // TESTING BOTH METHODS else delete, re-enable __DELETED__ & do returns
-	bool retval;
-	while (true) {
-//#ifdef __DELETED__
+static bool warn = true;
+if (warn) {
+std::cerr << "MeshInstance::pt_is_internal Octree::get_nearest still being used, but is unreliable!" << std::endl;
+warn = false;
+}
     // ok so it's within the maximum radius, still not necessarily
     // internal -- find the nearest node patch and compare this 
     // point to the normal vector of the patch
     const BasicNodePatch& nearest_np = mesh_tree->get_nearest(pt);
-    if ((pt - nearest_np).dot(nearest_np.get_normal()) > 0) {retval= false; break;}
+    if ((pt - nearest_np).dot(nearest_np.get_normal()) > 0) return false;
 
     // if get here then the above test must indicate that the point
     // is on the internal side of the nearest node patch and is 
     // therefore internal to the mesh instance.
-    retval= true; break;
-//#else   // __DELETED __
-	}
-
-	Vector tv[3];	// Triangle - must be copies because frame changes
-	int i, c;		// General and coordinate indices
-
-#ifdef USING_MAXD  // maxd no longer required - sadly!
-	// Lambda to test if triangle is too far from z-line
-	auto tmaxd = [&]() mutable noexcept -> bool  // mutable to match smaxd
-		{ return (tv[i](c) > pt(c)+maxd[c] || tv[i](c) < pt(c)-maxd[c]); };
-	// Lambda to set maxd
-	auto smaxd = [&]() mutable noexcept -> bool
-		{ double d = abs(tv[i](c)-tv[(i+1)%3](c));
-		  if (d > maxd[c]) maxd[c] = d; return false; };
-	// Choice of lambda is made once
-	std::function<bool()> amaxd[] = { tmaxd, smaxd };
-	auto lmaxd = amaxd[maxd[0] <= 0.0];
-#endif // maxd
+    return true;
+}
+#else
+MeshInstance::pt_set MeshInstance::pt_hitVertices;
+bool MeshInstance::pt_is_internal(const Vector& pt,
+								MeshInstance::pt_set& hitVertices) const
+{
+    // if the point is outside of the maximum radius then it cannot be
+    // inside the mesh instance
+    if ((pt - xyz_offset).length() >= radius) return false;
 
 	// Find the triangles for this mesh and
 	// count number of times a z-line from pt crosses a mesh triangle
+	Vector tv[3];	// Triangle - copies because const pointers are a mess
 	int cc = 0;	// crossings count
 	const int zdir = 2*(pt.z - xyz_offset.z > 0.0)-1;	// z-direction to use
 	hitVertices.clear();	// See interface to pt_triangle above
-    for (size_t np_ctr=0; np_ctr < patches.size(); ++np_ctr) {
-        const NodePatch& np = dynamic_cast<NodePatch&>(*(patches[np_ctr]));
-        
-		tv[0] = np;
-        Vector local_centre = mesh_ptr->get_centre();
-        std::vector<PointNormal> edge_points;
-        np.get_edge_points(edge_points);
-        for (std::vector<PointNormal>::const_iterator
-				it=edge_points.cbegin(), next_it, end=edge_points.cend();
-			 it!=end; ++it)
-        {
-            next_it = it+1;
-            if (next_it == end) next_it = edge_points.begin();
-            
-            tv[1] = it->pt();
-            tv[1].change_coordinate_frame(local_centre, rotation, xyz_offset);
-            tv[2] = next_it->pt();
-            tv[2].change_coordinate_frame(local_centre, rotation, xyz_offset);
+	std::vector<std::shared_ptr<Triangle>>& triangles
+		= mesh_ptr->get_triangle_ptrs();
+	unsigned int npatches = patches.size();
+    for (std::vector<std::shared_ptr<Triangle>>::const_iterator
+			it = triangles.cbegin(), end = triangles.cend();
+		 it != end; ++it)
+    {
+		const Triangle& t = **it;
+		unsigned int vi[] = {t.get_v1_idx(), t.get_v2_idx(), t.get_v3_idx()};
+		assert(vi[0] < npatches && vi[1] < npatches && vi[2] < npatches);
+		// This relies on vertices and patches having the same order...
+		for (int i = 0; i < 3; i++) tv[i] = patches[vi[i]]->get_node();
 
-#ifdef USING_MAXD  // maxd no longer required
-			// Depending on whether maxd is initialised, either:
-			//	 Record the maximum x,y difference up to this triangle; or
-			//   Skip any triangles too far from the line for it to cross them.
-			for (c = 0; c < 2; c++) {	// coordinate number 0=x, 1=y
-				for (i = 0; i < 3; i++)	// triangle vertex
-					if (lmaxd()) break; // true => skip
-				if (i < 3) break;
-			}
-			if (c < 2) continue;
-#endif
-
-			// Does z-line does cross the mesh at this triangle?
-			cc += pt_triangle(pt, tv, zdir);
-		}  // each triangle in node patch
-	}  // each node patch
-if (retval != ((cc%2) == 1)) { // Shout and record
-std::cerr << "MeshInstance::pt_is_internal instance " << instance_id
-		<< " new=" << cc << " " << ((cc%2) == 1)
-		<< " old=" << retval << std::endl;
-std::cout << "MeshInstance::pt_is_internal instance " << instance_id
-		<< " new=" << cc << " " << ((cc%2) == 1)
-		<< " old=" << retval << std::endl;
-}
+		// Does z-line does cross the mesh at this triangle?
+		cc += pt_triangle(pt, tv, zdir, hitVertices);
+	}  // each triangle in mesh
 	return ((cc%2) == 1);  // pt is internal if odd number of crossings
-#endif  // __DELETED__
 }
+#endif  // DELETED
 
 double MeshInstance::get_potential_at_internal_pt(const Vector& pt) const
 {
@@ -361,51 +438,37 @@ double MeshInstance::get_potential_at_external_pt(
     return accum;
 }
 
-int MeshInstance::move(const Vector& translate, const Quaternion& rotate) {
-//#define __LOCAL_MOVES__ 1 -- defined in node_patch.h and TODO remove #ifdef
-#ifndef __LOCAL_MOVES__
+// Rotation and translation is applied to a mesh instance not a reference mesh
+MeshInstance&
+	MeshInstance::move(const Vector& translate, const Quaternion& rotate)
+{
+#ifdef PRE_LOCAL_MOVES		//defined in node_patch.h and TODO remove #ifdef
 	std::cerr << "MeshInstance::move() has not been implemented" << std::endl;
 	// change the coordinate frame for the mesh and charges
 	// and reset the octree values
 	// Update current position and rotation
 
-#else // __LOCAL_MOVES__
+#else // PRE_LOCAL_MOVES
 std::cout << "MeshInstance::move from " << xyz_offset << " to " << translate << std::endl;
-	unsigned int npctr = 0;
     for (std::vector<boost::shared_ptr<BasicNodePatch>>::iterator
 			it = patches.begin(), end = patches.end();
 		 it != end; ++it)
     {
+		// Change node patch coordinates
 		(static_cast<NodePatch&>(**it)).change_coordinate_frame
 										(xyz_offset, rotate, translate);
-#if 1
-		// Reset the potential and derivative
-		// to the equivalent ref mesh node_patch values
-		const BasicNodePatch& np = mesh_ptr->get_node_patch(npctr);
-		(**it).f = np.f;
-		(**it).h = np.h;
-		(**it).energy_coefficient_f = np.energy_coefficient_f;
-		(**it).energy_coefficient_h = np.energy_coefficient_h;
-		(**it).force_coefficient_f = np.force_coefficient_f;
-		(**it).force_coefficient_h = np.force_coefficient_h;
-		(**it).gc = np.gc;
-//TODO NB Other values to reset?  quads
-		npctr++;
-#endif // if 0
+		// Reset the potential, its derivative and non-electrostatic energies
+		(**it).f = 0.0;
+		(**it).h = 0.0;
+		(**it).he = 0.0;
+		(**it).lj = 0.0;
     }
 
-#ifdef USING_MAXD  // maxd no longer required
-	// Reset maximum dimensions of triangles - will be recalculated when needed
-	for (int i = 0; i < 2; i++) maxd[i] = 0.0;
-#endif // maxd
-
-    // set Charges
+    // set Charges:  relies on allCharges and charges pointing to same Charges
     for (std::vector<boost::shared_ptr<Charge>>::iterator
-			it = charges.begin(), end = charges.end();
+			it = allCharges.begin(), end = allCharges.end();
 		 it != end; ++it)
     {
-		// Rotation and translation is being applied to a mesh instance
-		// rather than a mesh reference.
 		(**it).Vector::change_coordinate_frame(xyz_offset, rotate, translate);
     }
     
@@ -413,20 +476,547 @@ std::cout << "MeshInstance::move from " << xyz_offset << " to " << translate << 
     xyz_offset = translate;
     rotation *= rotate;
 
+#ifdef DELETED
     // create a simple octree of the mesh instance (for collision / grid checks)
 	reset_mesh_tree();
+#endif // DELETED
 	
-#endif // __LOCAL_MOVES__
+#endif // PRE_LOCAL_MOVES
+	return *this;
 }
 
+#ifndef PREHYDROPHOBIC
+// Local values and private methods to calculate non-electrostatic energies
+// Lambda to test if range is too great to be worth fiddling with
+static auto toofar = [](Vector& v, double lim) noexcept -> bool {
+	for (int i = 0; i < 3; i++) if (abs(v(i)) > lim) return true;
+	return false;
+};
+
+static constexpr double EINT{10000};	// Internal point cost: max energy/area
+static constexpr double P5olim{14.75};		// HE P5 Outer limit
+static constexpr double P5ilim{9.84356};	// HE P5 Inner limit
+static constexpr double LJolim{2.5};		// LJ Outer limit
+static constexpr double LJilim{2.3};		// LJ Inner limit
+static constexpr double ELIM{std::max(P5olim, LJolim)};	// Combined range limit
+
+// Returns negative if other not in range of mine under P5 (hydrophobic effect)
+static bool P5range(const BasicNodePatch& mine, const BasicNodePatch& other) {
+//std::cout << "MeshInstance::P5 range in " << std::endl;
+	// No point doing anything if the hydrophobicity isn't right
+	if (mine.hydrophobicity >= 0) return false;
+	// positive values should have an effect through longer-range smoothing...
+	
+	// Cheap range checks
+	Vector v = mine.get_node() - other.get_node();
+	if (toofar(v, P5olim)) return false;
+
+	// Calculate P5
+	// Check range and approach
+	double r = v.length();
+	if (r >= P5olim) return false;		// too far away
+	if (v.dot(mine.get_normal()) >= 0) return false; // opposite faces
+	double n = mine.get_normal().dot(other.get_normal());
+	if (n >= 0) return false;			// not enclosing water
+
+//std::cout << "MeshInstance::P5 range out " << std::endl;
+	// Otherwise, other is in range of mine for P5
+	return true;
+}
+
+// Returns the P5 (hydrophobic "energy") for distance r and given hydrophobicity
+static double P5(double r, double hydro) {
+	constexpr double l[] = {-0.191554, 0.0197538};	// Linear coefficients
+	constexpr double q[] = {-59.02945, 24.11215, -3.918994, 0.3168319,
+							-0.01274038, 0.0002038462}; // Quintic coeffs
+	// Return value
+	double e = 0.0;
+
+//std::cout << "MeshInstance::P5 in " << r << " " << hydro << std::endl;
+	// Apply the linear (inner) or quintic (outer) potentials
+	if (r <= P5ilim) {
+		if (r < 0.0) r = 0.0;  // overlaps reduce volume but treat as contact
+		e = l[1]*r + l[0];
+	}
+	else // (P5ilim < r < P5olim)
+		e = ((((q[5]*r + q[4])*r + q[3])*r + q[2])*r + q[1])*r + q[0];
+
+	// Adjust by strength of hydrophobicity - may have been smoothed here
+	if (hydro != -0.5) e *= (-2)*hydro;
+//std::cout << "MeshInstance::P5 out " << e << std::endl;
+	return e;
+}
+
+static bool LJrange(const Charge& mine, const Charge& other) {
+	// No point doing anything if parameters are set 0
+//std::cout << "MeshInstance::LJ range in " << std::endl;
+	if (other.epsilon == 0.0 || other.sigma == 0.0) return false;
+
+	// Cheap range checks
+	Vector v = mine - other;
+	if (toofar(v, LJolim*other.sigma)) return false;
+
+	// In this case it is more efficient to check the outer limit exactly
+	// during the LJ call, so this is deferred
+
+//std::cout << "MeshInstance::LJ range out " << std::endl;
+	// Otherwise, other is in range of mine for LJ
+	return true;
+}
+
+static double LJ(double r, double sigma, double epsilon) {
+	constexpr double m[] = {3136.5686, -68.069, -0.0833111261, 0.746882273};
+	constexpr double k = 0.0163169237;
+
+//std::cout << "MeshInstance::LJ in " << r << " " << sigma << " " << epsilon << std::endl;
+	// Check limits
+	if (r >= LJolim*sigma) return 0.0;
+	if (r == 0.0) return EINT;
+
+	// Calculate LJ energy
+	double sr2 = sigma/r;
+	sr2 *= sr2;
+	double sr6 = sr2*sr2*sr2;
+	double sr12 = sr6*sr6;
+
+	double e; // return value
+	if (r > LJilim*sigma)	// (LJilim < r < LJolim)
+		e = (m[0]*sr12 + m[1]*sr6 + m[2]/sr2 + m[3]) * epsilon;
+	else // (0.0 < r <= LJilim sigma)
+		e = (4 * (sr12 - sr6) + k) * epsilon;
+	if (e > EINT) e = EINT;
+//std::cout << "MeshInstance::LJ out " << e << std::endl;
+
+	return e;
+}
+
+unsigned int MeshInstance::resize_pot(unsigned int n) {
+	if (n > pot[psel].size()) {
+		pot[psel].resize(n);	// Value initialised to 0.0 for extras
+		pot[1-psel].resize(n);
+	}
+	return n;
+}
+
+// Local types and class to handle threading of calculate_boundary_energy
+// Kahan summation to maintain totals for mesh instance
+struct kahanValue {
+	double sum, carry;
+	kahanValue() { sum = 0.0; carry = 0.0; };
+};
+template<unsigned int N> struct kahanValueList { kahanValue value[N]; };
+
+static auto kahan = [](double& t, double& c, double el) mutable -> double {
+	el -= c;				// Adjusted element
+	double s = t + el;		// Imprecise sum
+	c = (s - t) - el;		// Carried error
+	t = s;					// Store the result
+	return t;
+};
+
+static auto kahanSum = [](kahanValue& kv, double el) mutable -> double {
+	return kahan(kv.sum, kv.carry, el);
+};
+
+// thread class for calculate_boundary_energy, but actually a little more
+// generic  e.g. supports work queuing although a single constructor list
+// would have done.
+struct CBE_thread {
+	// Primary (only) constructor:
+	// result contains 0: energy, 1: area
+	// trklen is the number of "omi" patches
+	CBE_thread(kahanValueList<2>& result, unsigned int trklen) {
+		trk.resize(trklen);
+		retval = &result;
+		th = std::thread(&CBE_thread::process, this);
+	};
+	CBE_thread(const CBE_thread&) = delete;	// Not copyable
+	CBE_thread(CBE_thread&&) = default;		// But is movable
+	~CBE_thread(void) { stop(); };			// Implied stop
+
+	// Explicit stop:  notify all and wait for thread to finish its work
+	void stop(void) {
+		bool already_stopping = CBE_thread::stopping;
+		CBE_thread::stopping = true;
+		if (!already_stopping) CBE_thread::cv.notify_all();
+		th.join();
+	}
+	// Immediate stop: a reset is required after this
+	static void halt(void) { halting = true; };
+
+	// Queue a work list
+	using cbeFn = std::function< double(
+		BasicNodePatch&, std::vector<unsigned int>&, MeshInstance::pt_set&) >;
+	using cbeTpl = std::tuple<cbeFn, PatchList::iterator, PatchList::iterator>;
+	static void push(const cbeTpl& work_item) {
+		{	// new scope
+			std::lock_guard<std::mutex> lock(CBE_thread::lkq);
+			CBE_thread::q.push(work_item);
+		}
+		CBE_thread::cv.notify_one();
+	};
+	// Reset queue and flags
+	static void reset(void) {
+		std::queue<cbeTpl> empty;
+		CBE_thread::q.swap(empty);
+		CBE_thread::stopping = false;
+		CBE_thread::halting = false;
+	}
+
+private:
+	// Class attributes to coodinate all threads
+	static std::queue<cbeTpl> q;
+	static std::mutex lkq;
+	static std::condition_variable cv;
+	static std::atomic<bool> stopping, halting;
+
+	// Object attributes
+	std::thread th;
+	kahanValueList<2> *retval;
+
+	// Tracking objects
+	// This could be generalised by templating
+	MeshInstance::pt_set hitVertices;
+	std::vector<unsigned int> trk;
+
+	// Main processing
+	void process(void) {
+		while (!CBE_thread::stopping || !CBE_thread::q.empty()) {
+			cbeFn work;  // zero-initialised
+			PatchList::iterator begin, end;
+			{//new scope
+				std::unique_lock<std::mutex> lk(CBE_thread::lkq);
+				CBE_thread::cv.wait(lk, []{return CBE_thread::stopping ||
+												!CBE_thread::q.empty();});
+				if (CBE_thread::stopping && CBE_thread::q.empty()) break;
+				if (!CBE_thread::q.empty())
+					std::tie(work, begin, end) = CBE_thread::q.front();
+				CBE_thread::q.pop();
+			}
+			CBE_thread::cv.notify_one();	//TODO this should be unnecessary?
+			if (work) {
+				for (auto&& it = begin; it != end; it++) {
+					if (halting) break;
+					// This could be generalised by returning a tuple to tie
+					double e = work(**it, trk, hitVertices);
+					kahanSum(retval->value[0], e);
+					if ((**it).he != 0.0) {
+						double a = (**it).get_bezier_area();
+						kahanSum(retval->value[1], a);
+					}
+				}
+			}
+		}
+	};
+};
+std::queue<CBE_thread::cbeTpl> CBE_thread::q;
+std::mutex CBE_thread::lkq;
+std::condition_variable CBE_thread::cv;
+std::atomic<bool> CBE_thread::stopping, CBE_thread::halting;
+
+template <typename T> struct hashFn{
+	size_t operator()(T v) const{ return boost::hash_value(v); }
+};
+template <typename T> struct eqFn {
+	bool operator()(T lhs, T rhs) const{ return (lhs == rhs); }
+};
+
+double MeshInstance::calculate_boundary_energy(
+	BasicNodePatch& np,						// The patch to calculate for
+	const MeshInstance& omi,				// The impinging MeshInstance
+	std::vector<unsigned int>& track,		// To avoid repeat omi points
+	MeshInstance::pt_set& hitVertices)		// To avoid repeat vertex hits
+{
+	// Calculate the energies for np resulting from omi
+	// Reset the energies
+	np.he = 0.0;
+	np.lj = 0.0;
+
+	// Get the point and the list of omi triangles
+    const Vector& pt = np.get_node();
+	const auto& triangles = omi.mesh_ptr->get_triangle_ptrs();
+
+	// PART 1:  Calculate provisional energy and determine if pt is inside omi
+	// Set up pt_triangle inputs
+	Vector tv[3];	// Triangle - copies because const pointers are a mess
+	const int zdir = 2*(pt.z - omi.xyz_offset.z > 0.0)-1;	// z-dir to use +/-
+	hitVertices.clear();	// See interface to pt_triangle
+	int i;			// General index
+	int cc = 0;		// crossings count for z-line
+
+	unsigned int npatches = omi.patches.size();	// = number of omi vertices
+	unsigned int start = 0;		// To track secondary encounters of omi vertices
+	if (npatches > 0) start = track[0];	// All values should be the same
+
+	// Locate this patch's charge, which will be needed for LJ potential
+	const Charge *mych = nullptr;
+	if (np.ch_idx < allCharges.size()) mych = allCharges[np.ch_idx].get();
+
+	// Set up the unordered sets used to hold vertices, triangles and charges
+	// These should be quite small, so can be set up for each call
+	using uint = unsigned int;
+	using idxSet = std::unordered_set<uint, hashFn<uint>, eqFn<uint>>;
+	idxSet vertexSet;
+	using idxMap = std::unordered_map<uint, bool, hashFn<uint>, eqFn<uint>>;
+	idxMap chargeMap;
+	using trio = std::array<uint,3>;
+	using idxTri = std::unordered_set<trio, hashFn<trio>, eqFn<trio>>;
+	idxTri triangleSet;
+
+	// Loop over all omi triangles checking potential ranges whilst
+	// also seeking crossings in z-dir from pt
+    for (const auto& spt: triangles) {
+		const Triangle& t = *spt;
+		std::array<uint,3> vi
+			= {t.get_v1_idx(), t.get_v2_idx(), t.get_v3_idx()};
+		assert(vi[0] < npatches && vi[1] < npatches && vi[2] < npatches);
+		// This relies on vertices and patches having the same order...
+		for (i = 0; i < 3; i++) {
+			tv[i] = omi.patches[vi[i]]->get_node();
+
+			// Calculate provisional boundary energy
+			// Have we been here before?
+			if (track[vi[i]] == start) {
+				// Range checking for new vertex
+				const BasicNodePatch& onp = *(omi.patches[vi[i]]);
+				if (P5range(np, onp)) vertexSet.insert(vi[i]);
+
+				// Locate the two charges, which contain LJ parameters
+				// No charges means no LJ energy to be included
+				if (mych != nullptr && onp.ch_idx < omi.allCharges.size()) {
+					const Charge& otch = *(omi.allCharges[onp.ch_idx]);
+					if (LJrange(*mych, otch))
+						chargeMap.insert({onp.ch_idx, false});
+				}
+				track[vi[i]]++;
+			}
+			// add triangle to list if vertex is there
+			if (vertexSet.count(vi[i]) > 0) triangleSet.insert(vi);
+		}
+
+		// Does z-line does cross the mesh at this triangle?
+		cc += pt_triangle(pt, tv, zdir, hitVertices);
+
+	}  // each triangle in mesh
+
+	// pt is internal to omi if odd number of crossings
+//TODO set r negative below if internal, unless r exceeds charge radius...
+	bool internal = false;
+	if ((cc%2) == 1) internal = true;
+
+	// Hydrophobic effect energy - done first because has longer range
+	// and can cut out if still too far.
+	double r = -1.0;	// distance for P5, negative means HE is 0
+	double n = -1.0;	// normal.other-normal, so must be negative
+	if (internal) {
+		r = 0.0;
+	}
+	// Cut out now if nothing was in range
+	else if (vertexSet.size() != 0) {
+		// Not internal and not distant, so calculate the energy
+		// The hydrophobic effect requires a distance, which is in the mean
+		// direction to the omi patches in range from pt.
+		unsigned ctr = 1;
+		Vector dir(0,0,0);
+		const Vector origin(0,0,0);
+		for (const auto& idx: vertexSet) {
+			Vector v = omi.patches[idx]->get_node() - pt;
+			if (v != origin) dir += (v.normalised() - dir)/ctr++;
+		}
+		// Last resort - this should never happen
+		if (dir == origin) dir = np.get_normal();
+
+		// Find the minimum distance to an in-range triangle in this direction.
+		// This will be on the near side of the omi.
+		double rmin = ELIM;
+		unsigned int vidx = 0;  // arbitrary choice if nothing beats ELIM
+		Vector opt;
+		for (const auto& aidx: triangleSet) {
+			for (i = 0; i < 3; i++) tv[i] = omi.patches[aidx[i]]->get_node();
+			Vector ptmp;
+			if (pt_triangle(pt, tv, dir, hitVertices, &ptmp)) {
+				for (unsigned int i = 0; i < 3; i++) {
+					double r = (tv[i]-ptmp).length();
+					if (r < rmin) {
+						vidx = aidx[i];
+						opt = ptmp;
+						rmin = r;
+					}
+				}
+			}
+		}
+		if (rmin == ELIM) return 0.0;	// Turned out nothing in range - how?
+
+		// Now calculate the energy per unit area for this local direction
+		// Convert energy per unit area to energy and adjust by node angle
+		const BasicNodePatch& onp = *(omi.patches[vidx]);
+		r = (pt-opt).length();
+		n = np.get_normal().dot(onp.get_normal());  // will be negative
+	}
+	if (r >= 0) {
+		double a = np.get_bezier_area();	// seems planar if force_planar
+		np.he = P5(r, np.hydrophobicity) * a*n*(-1);
+		if (np.he > EINT) np.he = EINT;		// should not happen for P5
+	}
+
+	// For Lennard-Jones, assume additivity of dispersion and repulsion energies
+	// Locate the two charges, which contain most of the required information
+	if (mych != nullptr) {
+		for (const auto& pr: chargeMap) {
+			const Charge& otch = *(omi.allCharges[pr.first]);
+			if (internal && !pr.second) {
+				chargeMap[pr.first] = true;	// Show we have been here before
+				// This is the first time this charge has been tested for this
+				// internal node - this is an expensive test...
+				hitVertices.clear();
+				if (omi.pt_is_internal(*mych, hitVertices)) {
+					// Bad news - EINT and halt all other processing
+					CBE_thread::halt();
+					np.lj = EINT;
+					return EINT;
+				}
+				// Good news - processing can continue as normal...
+			}
+			double r = (*mych - otch).length();
+			np.lj += LJ(r, otch.sigma, otch.epsilon) /
+					mesh_ptr->get_npcount(np.ch_idx);
+		}
+	}
+	if (np.lj > EINT) np.lj = EINT;
+
+	// Return the combined result
+	return np.he+np.lj;
+}
+
+void MeshInstance::update_energy(MeshInstanceList& mis) {
+	static unsigned int num_threads = (std::thread::hardware_concurrency() > 0 ?
+		std::thread::hardware_concurrency() : 1);
+	std::cout << __PRETTY_FUNCTION__ << num_threads << " threads" << std::endl;
+
+	// Hydrophobic area of contact is only the new contact area for the move
+	hea = 0.0;
+	double heac = 0.0;	// Carry for area
+	// Update the energy resulting from all other MIs
+	for (auto& spmi: mis) {
+		MeshInstance& omi = *spmi;
+		if (omi.instance_id == instance_id) continue;
+		resize_pot(omi.instance_id+1);
+		omi.resize_pot(instance_id+1);
+
+		// Save current values as now previous, reset current
+		pot[1-psel][omi.instance_id] = pot[psel][omi.instance_id];
+		pot[psel][omi.instance_id] = 0.0;
+		omi.pot[1-omi.psel][instance_id] = omi.pot[omi.psel][instance_id];
+		omi.pot[omi.psel][instance_id] = 0.0;
+		omi.hea = 0.0;
+
+		// Fast check on range: too far apart and no possible interaction
+		if ((xyz_offset - omi.xyz_offset).length() > radius + omi.radius + ELIM)
+			continue;
+
+		// Update energy from impact of other mesh instances
+		MeshInstance* mi[] = {this, &omi};
+		for (int i = 0; i < 2; i++) {
+			auto& nps = mi[i]->patches;
+			auto nit = nps.begin();
+			unsigned int npatches = nps.size();
+			unsigned int onpatches = mi[1-i]->patches.size();
+			std::vector<kahanValueList<2>> r(num_threads);
+
+			// Start threads in a new scope to limit their existence
+			if (num_threads > 1) {
+				// make sure boost isn't messing up placeholders!!!
+				using std::placeholders::_1; using std::placeholders::_2;
+				using std::placeholders::_3;
+
+				CBE_thread::reset();	// clear queue and unset flags
+				std::vector<std::unique_ptr<CBE_thread>> thl;
+				for (int j = num_threads; j > 0; j--) {
+					thl.push_back(
+						std::make_unique<CBE_thread>(r[j-1],onpatches) );
+					auto f = std::bind(&MeshInstance::calculate_boundary_energy,
+										mi[i], _1, *(mi[1-i]), _2, _3);
+					unsigned int block = npatches/j;
+					auto t = std::make_tuple(f, nit, nit+block);
+					CBE_thread::push(t);
+
+					npatches -= block;
+					nit += block;
+				}
+//TODO and break if EINT exceeded - but no sum yet?  Need a way to post results
+//from threads for main thread to sum - e.g. for threads to detect EINT and
+//stop, notifying all others
+			}	// Main thread sits here until worker threads complete
+			else {
+				// threading not in vogue - just run in main thread
+				std::vector<unsigned int>trk(onpatches, 0);
+				for (auto& nit: nps) {
+					BasicNodePatch& np = *nit;
+					double e = calculate_boundary_energy(np, *(mi[1-i]), trk);
+					kahanSum(r[0].value[0], e);
+					if (np.he != 0.0) {
+						double a = np.get_bezier_area();
+						kahanSum(r[0].value[1], a);
+					}
+				}
+			}
+
+			// Final sums and limit checks (threads completed above)
+			auto& mipot = mi[i]->pot[mi[i]->psel][mi[1-i]->instance_id];
+			double ce = 0.0, ca = 0.0;
+			for (auto& kv: r) {
+				ce += kv.value[0].carry;
+				kahan(mipot, ce, kv.value[0].sum);
+				ca += kv.value[1].carry;
+				kahan(mi[i]->hea, ca, kv.value[1].sum);
+			}
+			if (mipot >= EINT) mipot = EINT;
+		}	// each way
+
+		// Report the changes in total and hydrophobic areas
+		std::cout << "Change in hydrophobic area of contact instance "
+				<< omi.instance_id << " is " << omi.hea << std::endl;
+	}	// each other MI
+	std::cout << "Change in hydrophobic area of contact instance "
+			<< instance_id << " is " << hea << std::endl;
+}
+
+void MeshInstance::revert_energy(MeshInstanceList& mis) {
+	for (auto& spmi: mis) {
+		MeshInstance& omi = *spmi;
+		omi.pot[omi.psel][instance_id] = omi.pot[1-omi.psel][instance_id];
+	}
+	psel = 1-psel;
+}
+
+#endif // PREHYDROPHOBIC
+     
 double MeshInstance::calculate_energy(
+#ifndef PREHYDROPHOBIC
+	bool electrostatics,
+#endif // PREHYDROPHOBIC
 	double kappa,
 	double fvals[],
 	double hvals[]) const
 {
     // Dsolvent and Dprotein should have been set via set_dielectrics()
+#ifdef PREHYDROPHOBIC
     double E = mesh_ptr->calculate_energy(kappa, Dprotein, Dsolvent,
 	                                      fvals, hvals);
+#else
+	double E = 0.0;
+	if (electrostatics)
+		E = mesh_ptr->calculate_energy(kappa, Dprotein, Dsolvent,
+	                                      fvals, hvals);
+double F = E;
+	double c = 0.0, s;
+	for (const auto& p: pot[psel]) {
+		// Kahan sum of contributions
+		s = E + (p - c);
+		c += (s - E) - p;
+		E = s;
+	}
+#endif // PREHYDROPHOBIC
     std::cout << "Energy for mesh " << instance_id << " (lib_id="
 	          << mesh_ptr->get_id() << ") = " << std::setprecision(10)
 	          << E << std::endl;
@@ -469,6 +1059,12 @@ void MeshInstance::calculate_forces(
     (dbf).apply_rotation(rotation);
 }
 
+#ifdef PREHYDROPHOBIC
+	static constexpr unsigned int kin_nvals = 2;
+#else
+	static constexpr unsigned int kin_nvals = 7;
+#endif // PREHYDROPHOBIC
+
 void MeshInstance::kinemage_fh_vals(
 	double fscale,
 	double hscale,
@@ -476,77 +1072,149 @@ void MeshInstance::kinemage_fh_vals(
 	std::ostringstream& buf_f,
 	std::ostringstream& buf_h) const
 {
-    for (size_t np_ctr=0; np_ctr < patches.size(); ++np_ctr) {
+#ifdef PREHYDROPHOBIC
+	double s[kin_nvals] = {fscale, hscale};
+	kinemage_vals(num_colours, buf_f, buf_h, s);
+#else
+	double s[kin_nvals] = {0.0, 0.0, 0.0, 0.0, 0.0, fscale, hscale};
+	std::ostringstream buf_hy, buf_s, buf_e, buf_he, buf_lj;
+	kinemage_vals(num_colours, buf_hy, buf_s, buf_e, buf_he, buf_lj,
+				  buf_f, buf_h, s);
+#endif // PREHYDROPHOBIC
+}
+
+void MeshInstance::kinemage_vals(
+	int num_colours,
+#ifndef PREHYDROPHOBIC
+	std::ostringstream& buf_hy,
+	std::ostringstream& buf_s,
+	std::ostringstream& buf_e,
+	std::ostringstream& buf_he,
+	std::ostringstream& buf_lj,
+#endif // PREHYDROPHOBIC
+	std::ostringstream& buf_f,
+	std::ostringstream& buf_h) const
+{
+	double s[kin_nvals]{};
+#ifdef PREHYDROPHOBIC
+	kinemage_vals(num_colours, buf_f, buf_h, s);
+#else
+	kinemage_vals(num_colours, buf_hy, buf_s, buf_e, buf_he, buf_lj,
+				  buf_f, buf_h, s);
+#endif // PREHYDROPHOBIC
+}
+
+template<unsigned int S>
+void MeshInstance::kinemage_vals(
+	int num_colours,
+#ifndef PREHYDROPHOBIC
+	std::ostringstream& buf_hy,
+	std::ostringstream& buf_s,
+	std::ostringstream& buf_e,
+	std::ostringstream& buf_he,
+	std::ostringstream& buf_lj,
+#endif // PREHYDROPHOBIC
+	std::ostringstream& buf_f,
+	std::ostringstream& buf_h,
+	double (&scale)[S]) const
+{
+	if (S != kin_nvals) {
+		std::cerr << "MeshInstance::kinemage_vals invalid scales"
+				  << std::endl;
+		throw std::exception();
+	}
+
+	// Obtain scales
+	unsigned int npatches = 0;
+	bool getscale[kin_nvals];
+	for (int i = 0; i < kin_nvals; i++) {
+		getscale[i] = (scale[i] == 0.0);
+		if (getscale[i]) npatches = patches.size();
+	}
+    for (size_t np_ctr = 0; np_ctr < npatches; ++np_ctr) {
+        const NodePatch& np = dynamic_cast<NodePatch&>(*(patches[np_ctr]));
+#ifdef PREHYDROPHOBIC
+		double value[] = {np.f, np.h};
+#else
+		double sig = 0.0, eps = 0.0;
+		if (np.ch_idx < allCharges.size()) {
+			Charge& ch = *(allCharges[np.ch_idx]);
+			sig = ch.sigma;
+			eps = ch.epsilon;
+		}
+		double value[] = {np.hydrophobicity, sig, eps,
+						  np.he, np.lj, np.f, np.h};
+#endif // PREHYDROPHOBIC
+		for (int i = 0; i < kin_nvals; i++)
+			if (getscale[i]) scale[i] = std::max(scale[i], fabs(value[i]));
+	}
+	for (int i = 0; i < kin_nvals; i++)
+{
+		if (scale[i] == 0.0) scale[i] = 1.0;
+std::cout << __PRETTY_FUNCTION__ << " scale " << i << " is " << scale[i] << std::endl;
+}
+
+	// Output colours
+    for (size_t np_ctr = 0; np_ctr < patches.size(); ++np_ctr) {
         const NodePatch& np = dynamic_cast<NodePatch&>(*(patches[np_ctr]));
         
-        std::string f_name;
-        std::string h_name;
-		auto NEAR0 = [](double l) -> double { return (l==0?DBL_MIN:l); };
+#ifdef PREHYDROPHOBIC
+		double value[] = {np.f, np.h};
+		std::ostringstream *buf[] = {&buf_f, &buf_h};
+#else
+		double sig = 0.0, eps = 0.0;
+		if (np.ch_idx < allCharges.size()) {
+			Charge& ch = *(allCharges[np.ch_idx]);
+			sig = ch.sigma;
+			eps = ch.epsilon;
+		}
+		double value[] = {np.hydrophobicity, sig, eps,
+						  np.he, np.lj, np.f, np.h};
+		std::ostringstream *buf[] = {&buf_hy, &buf_s, &buf_e,
+									 &buf_he, &buf_lj, &buf_f, &buf_h};
+#endif // PREHYDROPHOBIC
+        std::string name[kin_nvals];
 
-        // figure out the colour name corresponding to the fval
-        {  // New scope
+        // figure out the colour name corresponding to the values
+        for (int i = 0; i < kin_nvals; i++) {
             std::stringstream s;
-            int f_idx = static_cast<int>(round(
-							static_cast<double>(num_colours)*np.f / NEAR0(fscale)
-						) );
-            if (f_idx < 1){
-                f_idx = abs(f_idx);
-                int fcol = (f_idx <= num_colours ? f_idx : num_colours+1);
-                s << "red" << "_" << fcol;
+            int idx = static_cast<int>(round(
+					static_cast<double>(num_colours)*value[i]/scale[i]));
+            if (idx < 1){
+                idx = abs(idx);
+                int col = (idx <= num_colours ? idx : num_colours+1);
+                s << "red_" << col;
             } else {
-                int fcol = (f_idx <= num_colours ? f_idx : num_colours+1);
-                s << "blue" << "_" << fcol;
+                int col = (idx <= num_colours ? idx : num_colours+1);
+                s << "blue_" << col;
+if (col > num_colours) {
+std::cout << __PRETTY_FUNCTION__ << " excess " << i << " " << value[i] << " " << scale[i] << std::endl;
+}
             }
-            f_name = s.str();
-        }  // End scope
-
-        // figure out the colour name corresponding to the hval
-        {  // New scope
-            std::stringstream s;
-            int h_idx = static_cast<int>(round(
-							static_cast<double>(num_colours)*np.h / NEAR0(hscale)
-						) );
-            if (h_idx < 1){
-                h_idx = abs(h_idx);
-                int hcol = h_idx <= num_colours ? h_idx : num_colours+1;
-                s << "red" << "_" << hcol;
-            } else {
-                int hcol = h_idx <= num_colours ? h_idx : num_colours+1;
-                s << "blue" << "_" << hcol;
-            }
-            h_name = s.str();
-        }  // End scope
+            name[i] = s.str();
+        }
 
         Vector local_centre = mesh_ptr->get_centre();
         std::vector<PointNormal> edge_points;
         np.get_edge_points(edge_points);
-        for (std::vector<PointNormal>::const_iterator
-				it=edge_points.cbegin(), next_it, end=edge_points.cend();
-			 it!=end; ++it)
-        {
-            next_it = it+1;
-            if (next_it == end) next_it = edge_points.begin();
+        for (auto it = edge_points.cbegin(); it != edge_points.cend(); ++it) {
+            auto next_it = it+1;
+            if (next_it == edge_points.cend()) next_it = edge_points.begin();
             
             Vector here = it->pt();
             here.change_coordinate_frame(local_centre, rotation, xyz_offset);
             Vector next = next_it->pt();
             next.change_coordinate_frame(local_centre, rotation, xyz_offset);
 
-            // kinemage a quadrilateral with the fh values
-            buf_f << "X " << f_name << " "
-					    << np.x << " " << np.y << " " << np.z << " "
-                        << f_name << " "
-                        << here.x << " " << here.y << " " << here.z << " "
-                        << f_name << " "
-                        << next.x << " " << next.y << " " << next.z << "\n";
-
-            // kinemage a quadrilateral with the fh values
-            buf_h << "X "  << h_name << " "
-					    << np.x << " " << np.y << " " << np.z << " "
-                        << h_name << " "
-                        << here.x << " " << here.y << " " << here.z << " "
-                        << h_name << " "
-                        << next.x << " " << next.y << " " << next.z << "\n";
+            // kinemage a quadrilateral with the values
+            for (int i = 0; i < kin_nvals; i++) {
+				*buf[i] << "X " << name[i] << " "
+						<< np.x << " " << np.y << " " << np.z << " "
+						<< name[i] << " "
+						<< here.x << " " << here.y << " " << here.z << " "
+						<< name[i] << " "
+						<< next.x << " " << next.y << " " << next.z << "\n";
+			}
         }
     }
 }
@@ -678,6 +1346,13 @@ MeshInstanceList::move(
 			<< " (" << size() << " mesh instances defined)" << std::endl;
         throw std::exception();
     }
+{
+static bool warn = true;
+if (warn)
+std::cerr << "MeshInstanceList::move NEEDS REVIEW - will not work with hydro"
+			<< std::endl;
+warn = false;
+}
 	
 	// Obtain require values from existing MeshInstance
 	MeshInstance& m = *(this->at(mesh_instance_id));
@@ -709,12 +1384,9 @@ bool MeshInstanceList::init_library_fh_vals(double *x, unsigned int offset)
 {
     bool preconditioned = false;
     unsigned int xctr=0;
-    for (MeshInstanceList::const_iterator mit=begin(), mend=end();
-		 mit!=mend; ++mit)
-    {
-        const MeshInstance& minst = **mit;
+    for (auto& spmi: *this) {
 		preconditioned = preconditioned
-		               || minst.init_fh_vals(x, xctr, offset, preconditioned);
+		               || spmi->init_fh_vals(x, xctr, offset, preconditioned);
     }
 	return preconditioned;
 }
@@ -725,25 +1397,15 @@ void MeshInstanceList::reset_library_fh_vals(
 	const boost::shared_array<double>& h_lhs)
 {
     unsigned int total_ctr=0;
-    for (std::vector< boost::shared_ptr<MeshInstance> >::iterator
-			mit=begin(), mend=end();
-		 mit != mend; ++mit)
-    {
-        MeshInstance& minst = **mit;
-		total_ctr += minst.reset_fh_vals(f_lhs, h_lhs, total_ctr);
-	}
+    for (auto& spmi: *this)
+		total_ctr += spmi->reset_fh_vals(f_lhs, h_lhs, total_ctr);
 }
 
 size_t MeshInstanceList::get_total_patches() const
 {
     unsigned int total_np=0;
-    for (std::vector< boost::shared_ptr<MeshInstance> >::const_iterator
-             it=cbegin(), end=cend();
-         it != end; ++it)
-    {
-        const MeshInstance& m = **it;
-        total_np += m.get_num_node_patches();
-    }
+    for (const auto& spmi: *this)
+        total_np += spmi->get_num_node_patches();
     return total_np;
 }
 

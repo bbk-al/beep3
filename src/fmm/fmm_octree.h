@@ -299,7 +299,7 @@ public:
         long start_explicit_evals = myclock();
         
         // where to put neighbourhood list
-#ifdef __DELETED__
+#ifdef DELETED
         const typename boost::shared_ptr<std::vector< ContentType* > >& neighbourhood = get_neighbourhood_contents(node);
 #else
         const typename boost::shared_ptr<std::vector< ContentType* > >& neighbourhood = super::get_neighbourhood_contents(node);

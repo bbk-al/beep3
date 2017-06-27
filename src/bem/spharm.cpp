@@ -48,7 +48,7 @@ double SpharmHolder::Ynm_dphi(int n, int m, double cos_theta, double phi)
 void SpharmHolder::Ynm_dtheta(int nmax, double cos_theta, double sin_theta, double phi, SpharmHolder& holder)
 {
     assert(nmax >= 0);
-#ifdef __PRE_GSL20__
+#ifdef PRE_GSL20
     double *result_array = new double[(nmax+1)*(nmax+1)];
     double *result_deriv_array = new double[(nmax+1)*(nmax+1)];
 
@@ -73,7 +73,7 @@ void SpharmHolder::Ynm_dtheta(int nmax, double cos_theta, double sin_theta, doub
             }
         }
     }
-#else //  __PRE_GSL20__
+#else //  PRE_GSL20
     double *result_array = new double[gsl_sf_legendre_array_n(nmax)];
     double *result_deriv_array = new double[gsl_sf_legendre_array_n(nmax)];
 	double val;
@@ -97,7 +97,7 @@ void SpharmHolder::Ynm_dtheta(int nmax, double cos_theta, double sin_theta, doub
 			holder(nctr, -m) = val * sin(phi*m);
 		}
 	}
-#endif //  __PRE_GSL20__
+#endif //  PRE_GSL20
 
     delete[] result_array;
     delete[] result_deriv_array;

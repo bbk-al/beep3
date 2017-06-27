@@ -302,6 +302,14 @@ class Mesh(_Mesh, object):
         """Write the precalculated energy and force coefficients to file."""
 
         energies = open(energies_filename, 'w')
+        hydro = False
+        for np in self.node_patches:
+            try:
+                hydro = (np.hydrophobicity > 0 or True)
+            except:
+                pass
+            break
+        fmt = "%2.16e " * (10 if hydro else 8)
         for np in self.node_patches:
             fx = np.force_coefficient_f.x
             fy = np.force_coefficient_f.y
@@ -309,7 +317,11 @@ class Mesh(_Mesh, object):
             hx = np.force_coefficient_h.x
             hy = np.force_coefficient_h.y
             hz = np.force_coefficient_h.z
-            print("%2.16e %2.16e %2.16e %2.16e %2.16e %2.16e %2.16e %2.16e" %(np.energy_coefficient_f, np.energy_coefficient_h, fx, fy, fz, hx, hy, hz), file=energies)
+            val = [np.energy_coefficient_f, np.energy_coefficient_h, \
+                    fx, fy, fz, hx, hy, hz]
+            if hydro:
+                val += [np.hydrophobicity, np.ch_idx]
+            print(fmt % tuple(val), file=energies)
 
         energies.close()
         return
@@ -356,21 +368,22 @@ class BEEP(_BEEP, object):
     def get_mesh_inst(self, idx):
         return MeshInstance( self.get_mesh_instance(idx) )
 
+    # Future preference is to lose fmax,hmax as beep can do this!
     def kinemage(self, filename, fmax=None, hmax=None):
-        """Create a kinemage representation of the current ensemble (with f/h values)"""
+        """Create a kinemage representation of the current ensemble
+           (with f/h values)
+        """
         import kintools
         from math import fabs
         
-        print("Writing %s ... " %(filename))
         if fmax is None:
-            fmax = max([max([fabs(np.f) for np in minst.node_patches]) for minst in self.mesh_instances])
-            print(f"pybeep kinemage {fmax} {min([min([fabs(np.f) for np in minst.node_patches]) for minst in self.mesh_instances])}")
+            fvals = [fabs(np.f) for minst in self.mesh_instances \
+                                for np in minst.node_patches]
+            (fmin, fmax) = (min(fvals), max(fvals))
         if hmax is None:
-            hmax = max([max([fabs(np.h) for np in minst.node_patches]) for minst in self.mesh_instances])
-            print(f"pybeep kinemage {hmax} {min([min([fabs(np.h) for np in minst.node_patches]) for minst in self.mesh_instances])}")
-        
-        print(fmax, hmax)
-        self.create_kinemage(filename, fmax, hmax, 100, kintools.hundred_red_blue_colours())
-        
-        print("done")
+            hvals = [fabs(np.h) for minst in self.mesh_instances \
+                                for np in minst.node_patches]
+            (hmin, hmax) = (min(hvals), max(hvals))
+        self.create_kinemage(filename, fmax, hmax, 100, 
+                             kintools.hundred_red_blue_colours())
                 

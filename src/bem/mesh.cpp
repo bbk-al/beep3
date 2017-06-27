@@ -23,12 +23,17 @@
 
 namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
 
+// NB PRETRIPTR this would have copied triangle_ptrs vector pointing to same
+// triangles;  so here the shared_ptrs are copied with same result but safer
+// on destruction.  It is not clear why a Mesh copy would ever be needed.
 Mesh::Mesh(const Mesh& other) {
     vertices.reserve(other.vertices.size());
     triangles.reserve(other.triangles.size());
     node_patches.reserve(other.node_patches.size());
     charges.reserve(other.charges.size());
 
+	// NB2 Then all this would have happened by default? So delete constructor?
+	// Which would also allow a default move constructor with !PRETRIPTR?
     vertices.insert
 		(vertices.end(), other.vertices.begin(), other.vertices.end());
     triangles.insert
@@ -36,6 +41,13 @@ Mesh::Mesh(const Mesh& other) {
     node_patches.insert(node_patches.end(),
 					    other.node_patches.begin(), other.node_patches.end());
     charges.insert(charges.end(), other.charges.begin(), other.charges.end());
+#ifndef PREHYDROPHOBIC
+    allCharges.insert(allCharges.end(),
+					  other.allCharges.begin(), other.allCharges.end());
+    allChargesMap.insert(other.allChargesMap.cbegin(),
+						 other.allChargesMap.cend());
+	nppc.insert(nppc.end(), other.nppc.begin(), other.nppc.end());
+#endif // PREHYDROPHOBIC
 
     net_charge = other.net_charge;
     centre = other.centre;
@@ -43,12 +55,14 @@ Mesh::Mesh(const Mesh& other) {
     done_energy_precalcs = other.done_energy_precalcs;
 }
 
+#ifdef PRETRIPTR
 Mesh::~Mesh() {
     // delete the dynamically allocated triangles
     for (size_t ii=0; ii < triangle_ptrs.size(); ++ii) {
         delete triangle_ptrs[ii];
     }
 }
+#endif // PRETRIPTR
 
 Mesh::Mesh(const std::string& mesh_filename,
            const std::string& xyzqr_filename,
@@ -61,7 +75,7 @@ Mesh::Mesh(const std::string& mesh_filename,
     init_charges(xyzqr_path);
     
     // default to charge centroid...
-#if __DELETED__  // This is already done in init_charges and this does nothing!
+#ifdef DELETED  // This is already done in init_charges and this does nothing!
     calculate_charges_centroid();
 #endif
     
@@ -218,7 +232,26 @@ void Mesh::init_mesh(const fs::path& mesh_filename) {
 
 void Mesh::init_charges(const fs::path& xyzqr_filename) {
     // read the charges using utility function in Charge class
+#ifdef PREHYDROPHOBIC
     net_charge = Charge::read_charges_from_file(xyzqr_filename, charges);
+#else
+    net_charge = Charge::read_charges_from_file(xyzqr_filename, allCharges,
+												false);
+	// Build a key map to find the charge indices later and
+	// copy the non-zero ones into charges
+	unsigned int ctr = 0;
+	for (std::vector<Charge>::const_iterator
+			ch = allCharges.cbegin(), ch_end = allCharges.cend();
+		 ch != ch_end; ++ch)
+	{
+		allChargesMap[*ch] = ctr++;
+		if (ch->charge != 0) {
+			Charge c(*ch);
+			charges.push_back(c);
+		}
+	}
+	
+#endif // PREHYDROPHOBIC
 
     //std::cout << "Added " << charges.size() << " charges." << std::endl;
     centre = calculate_charges_centroid();
@@ -575,6 +608,90 @@ void Mesh::init_energy_precalcs() {
     Vector centre;
     double edge_length;
     get_bounding_cube(centre, edge_length);
+#ifndef PREHYDROPHOBIC
+//TODO this should be in its own sub-method to avoid distraction
+
+	// Octree for hydrophobicities
+	// This achieves O(logN) for charges, but alas not for node patches.
+	boost::scoped_ptr<Octree<Node<Charge>, Charge> >
+		hytree(new Octree< Node<Charge>, Charge >(10, centre, edge_length));
+    // add all charges into the octree
+    for (std::vector<Charge>::const_iterator
+			ch_it=allCharges.cbegin(), ch_end=allCharges.cend();
+		 ch_it != ch_end; ++ch_it)
+    {
+        const Charge& ch = *ch_it;
+		hytree->add(ch);
+    }
+	// Find each node's nearest charge and assign hydrophobicity to the patch
+	auto dist = [](const Vector& v, const Charge& c) noexcept -> double
+		{ return (v - c).length() - c.radius; };
+    for (std::vector<BasicNodePatch>::iterator
+			it=node_patches.begin(), end=node_patches.end();
+		 it != end; ++it)
+    {
+		// Do this relative to vertex;  arguably should be to centroid
+		const Charge& c = hytree->get_nearest(it->get_node(), dist);
+		it->ch_idx = allChargesMap.at(c);	// Exception if c not present
+		if (it->ch_idx >= nppc.size()) nppc.resize(it->ch_idx+1);
+		nppc[it->ch_idx]++;				// Number of NP's for this charge
+		it->hydrophobicity = c.hydrophobicity;  // Stored on np for smoothing
+    }
+	// Smooth values across all node patches
+	// TODO is this actually useful;  if not, lose np hydrophobicity
+	std::vector<double> merged;
+	unsigned int ctr = 0;
+	merged.reserve(get_num_node_patches());
+    for (std::vector<BasicNodePatch>::iterator
+			it=node_patches.begin(), end=node_patches.end();
+		 it != end; ++it)
+    {
+		// Get list of indices of mesh triangles for which this node is a vertex
+		const std::vector<unsigned int>& tri
+			= vertices[it->vertex_idx].get_triangle_indices();
+		// Obtain weighted average of neighbouring node patch hydrophobicities
+		// Easiest to double count each node's contribution (triangles link)
+		// And by construction, node patch indices match vertex indices...
+		merged[ctr] = it->hydrophobicity;
+		Charge& ch = allCharges[it->ch_idx];
+		double datom = (ch - it->get_node()).length();
+		double ratom = ch.radius;
+		double sow = 1.0;
+		if (datom > ratom) {
+			sow = 2 * ratom / datom;	// count double as others are
+			merged[ctr] *= sow;
+			for (std::vector<unsigned int>::const_iterator
+					t=tri.begin(), tend=tri.end();
+				t != tend; ++t)
+			{
+				// Add up the hydrophobicities from the neighbouring nodes
+				const Triangle& tr = triangles[*t];
+				unsigned int tvi[] = {tr.v1_idx != ctr ? tr.v1_idx : tr.v2_idx,
+									tr.v3_idx != ctr ? tr.v3_idx : tr.v2_idx};
+				for (int i = 0; i < 2; i++) {
+					BasicNodePatch& nbr = node_patches[tvi[i]];
+					Charge& ch = allCharges[nbr.ch_idx];	// new reference
+					datom = (ch - nbr.get_node()).length();
+					ratom = ch.radius;
+					double w = ratom /
+						(datom + (nbr.get_node() - it->get_node()).length());
+					merged[ctr] += nbr.hydrophobicity * w;
+					sow += w;
+				}
+			}
+		}
+		merged[ctr] /= sow;  // sum of weights
+		ctr++;
+	}
+	// Play the merged values back into the nodes
+	ctr = 0;
+    for (auto& np: node_patches) {
+		np.hydrophobicity = merged[ctr];
+		ctr++;
+	}
+
+	// Octree for FMM
+#endif // PREHYDROPHOBIC
     boost::scoped_ptr<fmm::FMM_Octree_6FIG_ACCURACY>
 		fmm(new fmm::FMM_Octree_6FIG_ACCURACY(NB_SIZE, centre, edge_length));
 
@@ -762,16 +879,33 @@ void Mesh::read_energy_precalcs(
     energies_file.open(energies_filename);
     assert(energies_file.good());
 
+	std::string str;
+	std::istringstream is;
     for (std::vector<BasicNodePatch>::iterator
 			it=node_patches.begin(), end=node_patches.end();
 		 it != end; ++it)
     {
         BasicNodePatch& np = *it;
-        energies_file >> np.energy_coefficient_f >> np.energy_coefficient_h 
-                      >> np.force_coefficient_f.x >> np.force_coefficient_f.y
-		              >> np.force_coefficient_f.z 
-                      >> np.force_coefficient_h.x >> np.force_coefficient_h.y
-		              >> np.force_coefficient_h.z;
+#ifndef PREHYDROPHOBIC
+		// Default the values that might not be present
+		np.hydrophobicity = 0.0;
+		np.ch_idx = allCharges.size();
+#endif // PREHYDROPHOBIC
+		std::getline(energies_file, str);
+		is.clear();	// Needed to reset after reading past end of string
+		is.str(str);
+        is >> np.energy_coefficient_f >> np.energy_coefficient_h 
+           >> np.force_coefficient_f.x >> np.force_coefficient_f.y
+		   >> np.force_coefficient_f.z 
+           >> np.force_coefficient_h.x >> np.force_coefficient_h.y
+#ifdef PREHYDROPHOBIC
+		   >> np.force_coefficient_h.z;
+#else
+		   >> np.force_coefficient_h.z
+		   >> np.hydrophobicity >> np.ch_idx;
+		if (np.ch_idx >= nppc.size()) nppc.resize(np.ch_idx+1);
+		nppc[np.ch_idx]++;				// Number of NP's for this charge
+#endif // PREHYDROPHOBIC
     }
 
     energies_file.close();
@@ -825,7 +959,11 @@ void Mesh::calculate_surface_integral_forces(
         // will take advantage of the parametric representation of
         // each type, so don't need to worry here about what type
         // it actually is.
+#ifdef PRETRIPTR
         const Triangle& tri = dynamic_cast<Triangle&>(*(triangle_ptrs[tctr])); 
+#else
+        const Triangle& tri = *(triangle_ptrs[tctr]);
+#endif // PRETRIPTR
 
         const Vertex& v1 = vertices[tri.v1_idx];
         const Vector& n1 = v1.normal;
@@ -947,7 +1085,6 @@ double Mesh::calculate_energy(
         const BasicNodePatch& np = node_patches[ctr];
         const double& f = fvals[ctr];
         const double& h = hvals[ctr];
-
         {  // New scope
             double energy_frag = (h*epsilon_ratio*np.energy_coefficient_h
 								  - f*np.energy_coefficient_f);
@@ -1174,7 +1311,11 @@ void Mesh::create_node_patches() {
 
 	double planar_area = 0;
 	total_bezier_area = 0.0;
+#ifdef PRETRIPTR
 	for (std::vector<BasicTriangle*>::const_iterator
+#else
+	for (std::vector<std::shared_ptr<Triangle>>::const_iterator
+#endif // PRETRIPTR
 			it=triangle_ptrs.cbegin(), end=triangle_ptrs.cend();
 		 it != end; ++it)
 	{
@@ -1184,11 +1325,8 @@ void Mesh::create_node_patches() {
 
 	// instantiates umbrella-shaped Node Patches
 	unsigned int ctr=0;
-	for (std::vector<Vertex>::iterator it=vertices.begin(), end=vertices.end();
-		 it != end; ++it)
-	{
+	for (auto& v: vertices)
 		node_patches.push_back(BasicNodePatch(ctr++,*this));
-	}
 
 	std::cout << "Planar area: " << total_planar_area
 	          << " vs. bezier area: " << total_bezier_area << std::endl;

@@ -168,6 +168,37 @@ struct PyBasicNodePatchHelper {
 	}
 };
 
+struct PyBasicOctreeHelper {
+    static const Vector&
+	__py_nearest_v(const BasicOctree<Vector>& bov, const Vector& v)
+	{
+		return bov.get_nearest(v);
+	}
+    static const BasicNodePatch&
+	__py_nearest_np(const BasicOctree<BasicNodePatch>& bonp, const Vector& v)
+	{
+		return bonp.get_nearest(v);
+	}
+};
+
+struct PyMeshHelper {
+	static unsigned int
+	__py_num_charges(const Mesh& m) { return m.get_num_charges(false); }
+};
+
+struct PyMeshInstanceHelper {
+	static unsigned int
+	__py_num_charges(const MeshInstance& m) { return m.get_num_charges(false); }
+};
+
+// Managing overloads and defaults
+// Mesh
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(Mesh_get_charge, Mesh::get_charge, 1, 2)
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(Mesh_get_num_charges, Mesh::get_num_charges, 0, 1)
+// MeshInstance
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(MeshInstance_get_charge, MeshInstance::get_charge, 1, 2)
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(MeshInstance_get_num_charges, MeshInstance::get_num_charges, 0, 1)
+
 
 BOOST_PYTHON_MODULE(libBEEP)
 {
@@ -262,6 +293,8 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def_readwrite("gc", &BasicNodePatch::gc)
         .def_readwrite("f", &BasicNodePatch::f)
         .def_readwrite("h", &BasicNodePatch::h)
+        .def_readwrite("hydrophobicity", &BasicNodePatch::hydrophobicity)
+        .def_readwrite("ch_idx", &BasicNodePatch::ch_idx)
         .def_readwrite("energy_coefficient_f", &BasicNodePatch::energy_coefficient_f)
         .def_readwrite("energy_coefficient_h", &BasicNodePatch::energy_coefficient_h)
         .def_readonly("force_coefficient_f", &BasicNodePatch::force_coefficient_f)
@@ -301,14 +334,15 @@ BOOST_PYTHON_MODULE(libBEEP)
         //.def("init", &Mesh::init)
         .def("get_triangle", &Mesh::get_triangle, return_value_policy<reference_existing_object>())
         .def("get_node_patch", &Mesh::get_node_patch, return_value_policy<reference_existing_object>())
-        .def("get_charge", &Mesh::get_charge, return_value_policy<reference_existing_object>())
+        .def("get_charge", &Mesh::get_charge, Mesh_get_charge(args("all"))[ return_value_policy<reference_existing_object>()])
         .def("get_vertex", &Mesh::get_vertex, return_value_policy<reference_existing_object>())
         .def("add_vertex", &Mesh::add_vertex)
         .def("define_triangle", &Mesh::define_triangle)
         .def_readonly("num_triangles", &Mesh::get_num_triangles)
         .def_readonly("num_node_patches", &Mesh::get_num_node_patches)
         .def_readonly("num_vertices", &Mesh::get_num_node_patches) // number of vertices sane as num node patches
-        .def_readonly("num_charges", &Mesh::get_num_charges) 
+        .def("get_num_charges", &Mesh::get_num_charges, Mesh_get_num_charges(args("all")))
+        .add_property("num_charges", &PyMeshHelper::__py_num_charges)
         .def("get_centre", &Mesh::get_centre, return_value_policy<copy_const_reference>())
         .def("set_centre", &Mesh::set_centre)
         //.def("init_energy_precalcs", &Mesh::init_energy_precalcs)
@@ -327,7 +361,8 @@ BOOST_PYTHON_MODULE(libBEEP)
 
     class_< BasicOctree<Vector> >("Octree", init<unsigned int, const Vector&, double>())
         .def("insert", &BasicOctree<Vector>::insert)
-        .def("nearest", &BasicOctree<Vector>::get_nearest, return_value_policy<copy_const_reference>())
+        //.def("nearest", &BasicOctree<Vector>::get_nearest, return_value_policy<copy_const_reference>())
+        .def("nearest", &PyBasicOctreeHelper::__py_nearest_v, return_value_policy<copy_const_reference>())
         .def("finalize", &BasicOctree<Vector>::finalize)
         .def("spew", &BasicOctree<Vector>::spew)
         .def("rejig", &BasicOctree<Vector>::rejig)
@@ -341,7 +376,9 @@ BOOST_PYTHON_MODULE(libBEEP)
     class_< BasicOctree<BasicNodePatch> >("NodePatchTree", init<unsigned int, const Vector&, double>())
         .def("insert", &BasicOctree<BasicNodePatch>::insert)
         .def("rejig", &BasicOctree<BasicNodePatch>::rejig)
-        .def("nearest", &BasicOctree<BasicNodePatch>::get_nearest, return_value_policy<copy_const_reference>());
+        //.def("nearest", &BasicOctree<BasicNodePatch>::get_nearest, return_value_policy<copy_const_reference>())
+        .def("nearest", &PyBasicOctreeHelper::__py_nearest_np, return_value_policy<copy_const_reference>())
+		;
 
     class_<RunInfo>("RunInfo", init<>())
         .def("__str__", &RunInfo::str);
@@ -382,9 +419,10 @@ BOOST_PYTHON_MODULE(libBEEP)
         
     class_<MeshInstance>("_MeshInstance", init<const MeshInstance&>())
         .def_readonly("num_node_patches", &MeshInstance::get_num_node_patches)
-        .def_readonly("num_charges", &MeshInstance::get_num_charges)
+        .def("get_num_charges", &MeshInstance::get_num_charges, MeshInstance_get_num_charges(args("all"))) 
+        .add_property("num_charges", &PyMeshInstanceHelper::__py_num_charges)
         .def("get_node_patch", &MeshInstance::get_node_patch, return_value_policy<copy_non_const_reference>())
-        .def("get_charge", &MeshInstance::get_charge, return_value_policy<copy_const_reference>())
+        .def("get_charge", &MeshInstance::get_charge, MeshInstance_get_charge(args("all"))[ return_value_policy<copy_const_reference>()])
         .def("get_mesh", &MeshInstance::get_ref_mesh, return_value_policy<copy_const_reference>())
         .def("set_dielectrics", &MeshInstance::set_dielectrics)
         .def("isSilent", &MeshInstance::isSilent)

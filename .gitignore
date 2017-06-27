@@ -1,3 +1,9 @@
+## local
+*-old
+
+## Apple
+.DS_Store
+
 ## C++
 # Prerequisites
 *.d

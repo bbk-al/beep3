@@ -19,6 +19,7 @@
 
 #include <boost/shared_array.hpp>
 
+#include <unordered_map>
 #include "../common/math_vector.h"
 #include "bem_kernels.h"
 #include "node_patch.h"
@@ -71,8 +72,10 @@ public:
 	//! Copy constructor
 	Mesh(const Mesh& other);
 
+#ifdef PRETRIPTR
 	//! Destructor
 	virtual ~Mesh();
+#endif // PRETRIPTR
 
 #ifdef __CHARMC__
     virtual void pup(PUP::er &p) {
@@ -97,16 +100,35 @@ public:
 	}
     std::vector<BasicNodePatch>& get_node_patches() { return node_patches; }
 
+#ifdef PREHYDROPHOBIC
     const std::vector<Charge>& get_charges() const { return charges; }
     std::vector<Charge>& get_charges() { return charges; }
+#else
+    const std::vector<Charge>& get_charges(bool all = false) const {
+		return all ? allCharges : charges;
+	}
+    std::vector<Charge>& get_charges(bool all = false) {
+		return all ? allCharges : charges;
+	}
+#endif // PREHYDROPHOBIC
 
     const std::vector<Triangle>& get_triangles() const { return triangles; }
     std::vector<Triangle>& get_triangles() { return triangles; }
 
+#ifdef PRETRIPTR
     const std::vector<BasicTriangle*>& get_triangle_ptrs() const {
+#else
+    const std::vector<std::shared_ptr<Triangle>>& get_triangle_ptrs() const {
+#endif // PRETRIPTR
 		return triangle_ptrs;
 	}
+#ifdef PRETRIPTR
     std::vector<BasicTriangle*>& get_triangle_ptrs() { return triangle_ptrs; }
+#else
+    std::vector<std::shared_ptr<Triangle>>& get_triangle_ptrs() {
+		return triangle_ptrs;
+	}
+#endif // PRETRIPTR
 
     const std::vector<Vertex>& get_vertices() const { return vertices; }
     std::vector<Vertex>& get_vertices() { return vertices; }
@@ -122,16 +144,31 @@ public:
 	
 	// get_ index methods
     inline const BasicNodePatch& get_node_patch(unsigned int index) const;
+#ifdef PREHYDROPHOBIC
     inline const Charge& get_charge(unsigned int index) const;
+#else
+    inline const Charge& get_charge(unsigned int index, bool all = false) const;
+	inline unsigned int get_npcount(unsigned int ch_idx) const;
+#endif // PREHYDROPHOBIC
     inline const Triangle& get_triangle(unsigned int index) const;
     inline const Vertex& get_vertex(unsigned int index) const;
+#ifdef PRETRIPTR
     inline const BasicTriangle* get_triangle_ptr(unsigned int index) const;
+#else
+    inline const Triangle& get_triangle_ptr(unsigned int index) const;
+#endif // PRETRIPTR
 
 	// get counts
     unsigned int get_num_vertices() const { return vertices.size(); }
     unsigned int get_num_triangles() const { return triangles.size(); }
     unsigned int get_num_node_patches() const { return node_patches.size(); }
+#ifdef PREHYDROPHOBIC
     unsigned int get_num_charges() const { return charges.size(); }
+#else
+    unsigned int get_num_charges(bool all = false) const {
+		return all ? allCharges.size() : charges.size();
+	}
+#endif // PREHYDROPHOBIC
     unsigned int len() const { return get_num_node_patches(); }
 
 	// get - other
@@ -198,6 +235,7 @@ public:
         const double fvals[],
         const double hvals[]) const;
     
+	// Calculate electrostatic energy only for mesh in isolation
     double calculate_energy(
 		double kappa,
 		double Dprotein,
@@ -254,10 +292,44 @@ private:
     Vector centre;
 
     std::vector<Triangle> triangles;
+#ifdef PRETRIPTR
     std::vector<BasicTriangle*> triangle_ptrs;
+#else
+    std::vector<std::shared_ptr<Triangle>> triangle_ptrs;
+#endif // PRETRIPTR
     std::vector<Vertex> vertices;
     std::vector<BasicNodePatch> node_patches;
     std::vector<Charge> charges;
+#ifndef PREHYDROPHOBIC
+	// This does duplicate charges, but charges is needed for backwards 
+	// compatibility.  Could have just kept neutrals here, but two lists
+	// then have to be checked whenever hydrophobicity is being considered
+	// Perhaps ideally would have neutrals then charges in one vector,
+	// but how to do that without disturbing charges?
+	// Using shared_ptr<Charge> messes up get_charges() and external users.
+	// An unfortunate example of bad design:  List classes should be used.
+	// On the other hand, most of the access needed is to an iterator, and it
+	// should all be read-only...so is there another way around this?
+	std::vector<Charge> allCharges;  // includes 0's
+	// Map of allCharges - needs hash and equality functions...
+	struct hashFunc{
+		size_t operator()(const Charge& c) const{
+			size_t s = 0;
+			// Not expecting two charges in same place, so location is enough:
+			for (int i = 0; i < 3; i++) boost::hash_combine(s, c(i));
+			return s;
+		}
+	};
+	struct equalsFunc{
+		bool operator()(const Charge& lhs, const Charge& rhs) const{
+			return (lhs.x == rhs.x) && (lhs.y == rhs.y) && (lhs.z == rhs.z);
+		}
+	};
+	std::unordered_map<Charge, unsigned int, hashFunc, equalsFunc>
+		allChargesMap;
+	// Need to maintain number of node patches per charge for LJ calculation
+	std::vector<unsigned int> nppc;
+#endif  // PREHYDROPHOBIC
 
     double total_planar_area;
     double total_bezier_area;
@@ -270,7 +342,7 @@ private:
 };
 
 // ListedMesh
-#ifdef __DELETED__
+#ifdef DELETED
 typedef std::vector< boost::shared_ptr<Mesh> > MeshList;
 #else
 class ListedMesh : public Mesh
@@ -315,12 +387,27 @@ inline const Triangle& Mesh::get_triangle(unsigned int index) const {
 	return triangles[index];
 }
 
+#ifdef PREHYDROPHOBIC
 inline const Charge& Mesh::get_charge(unsigned int index) const {
 	if (index >= charges.size())
 		throw std::out_of_range("index out of range for mesh");
 
 	return charges[index];
 }
+#else
+inline
+const Charge& Mesh::get_charge(unsigned int index, bool all) const {
+	if (index >= (all ? allCharges.size() : charges.size()))
+		throw std::out_of_range("index out of range for mesh");
+
+	return all ? allCharges[index] : charges[index];
+}
+inline unsigned int Mesh::get_npcount(unsigned int ch_idx) const {
+	if (ch_idx > nppc.size())
+		throw std::out_of_range("charge index out of range for mesh");
+	return nppc[ch_idx];
+}
+#endif // PREHYDROPHOBIC
 
 inline const Vertex& Mesh::get_vertex(unsigned int index) const {
 	if (index >= vertices.size())
@@ -329,11 +416,19 @@ inline const Vertex& Mesh::get_vertex(unsigned int index) const {
 	return vertices[index];
 }
 
+#ifdef PRETRIPTR
 inline const BasicTriangle* Mesh::get_triangle_ptr(unsigned int index) const {
+#else
+inline const Triangle& Mesh::get_triangle_ptr(unsigned int index) const {
+#endif // PRETRIPTR
 	if (index >= triangle_ptrs.size())
 		throw std::out_of_range("index out of range for mesh");
 
+#ifdef PRETRIPTR
 	return triangle_ptrs[index];
+#else
+	return *(triangle_ptrs[index]);
+#endif // PRETRIPTR
 }
 
 inline void
@@ -378,6 +473,7 @@ inline void Mesh::get_bounding_cube_limits(Vector &max, Vector& min) const
 	}
 	
 	// loop over charges in the mesh
+	// TODO PREHYDROPHOBIC - ok with mesh check above, but should be allCharges?
 	for (std::vector<Charge>::const_iterator
 			it=charges.cbegin(), end=charges.cend();
 		 it != end; ++it)
@@ -429,7 +525,11 @@ inline void Mesh::create_bezier_triangles()
 	triangle_ptrs.reserve(triangles.size());
 	for (std::vector<Triangle>::const_iterator tri_it=triangles.begin(), tri_end=triangles.end(); tri_it != tri_end; ++tri_it)
 	{
+#ifdef PRETRIPTR
 		triangle_ptrs.push_back(new CurvedTriangleType(*tri_it));
+#else
+		triangle_ptrs.push_back(std::make_shared<CurvedTriangleType>(*tri_it));
+#endif // PRETRIPTR
 	}
 
 }

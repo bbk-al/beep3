@@ -1366,7 +1366,7 @@ inline void yftophys(const int nexptot,
                 sgn = -sgn;
                 double rtmp = sgn*std::real(fexpe(nexte)*mexpf(nftot+mm));
                 nexte++;
-#ifdef __DELETED__
+#ifdef DELETED
                 double& cmplx_part = mexpphys(nptot+ival).imag();
                 cmplx_part += rtmp;
 #else
@@ -1381,7 +1381,7 @@ inline void yftophys(const int nexptot,
                 sgn = -sgn;
                 double rtmp = sgn*std::real( fexpo(nexto)*mexpf(nftot+mm) );
                 nexto++;
-#ifdef __DELETED__
+#ifdef DELETED
                 double& real_part = mexpphys(nptot+ival).real();
                 real_part += rtmp;
 #else
@@ -1397,7 +1397,7 @@ inline void yftophys(const int nexptot,
     return;
 }
 
-#ifdef __DELETED__
+#ifdef DELETED
 template <int multiplic, int begin, int end, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void fmm::convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
                 const Level_Dependent_FMM_Globals<NTERMS, NLAMBS>& fmm_level_globs,
@@ -1426,7 +1426,7 @@ inline void fmm::convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_
     return;
 
 }
-#else // ! __DELETED__
+#else // ! DELETED
 template <int multiplic, int begin, int end, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
                 const Level_Dependent_FMM_Globals<NTERMS, NLAMBS>& fmm_level_globs,
@@ -1437,7 +1437,7 @@ inline void convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs
                 MultiHolder<multiplic,PlaneWaveHolderT>& south,
                 MultiHolder<multiplic,PlaneWaveHolderT>& east,
                 MultiHolder<multiplic,PlaneWaveHolderT>& west);
-#endif // ! __DELETED__
+#endif // ! DELETED
 
 template <int multiplic, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
@@ -1453,7 +1453,7 @@ inline void convert_mpole_to_six_planewaves(const FMM_Globals<NTERMS>& fmm_globs
     convert_mpole_to_six_planewaves<multiplic,0,multiplic>(fmm_globs,fmm_level_globs,mpole,up,down,north,south,east,west);
 }
 
-#ifdef __DELETED__
+#ifdef DELETED
 template <int multiplic, int begin, int end, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void convert_and_add_accumulated_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
                                             const Level_Dependent_FMM_Globals<NTERMS,NLAMBS>& fmm_level_globs,
@@ -1489,7 +1489,7 @@ inline void convert_and_add_accumulated_planewaves(const FMM_Globals<NTERMS>& fm
 
     return;
 }
-#else // ! __DELETED__
+#else // ! DELETED
 template <int multiplic, int begin, int end, typename MultipoleHolderT, typename PlaneWaveHolderT, int NTERMS, int NLAMBS>
 inline void convert_and_add_accumulated_planewaves(const FMM_Globals<NTERMS>& fmm_globs,
                                             const Level_Dependent_FMM_Globals<NTERMS,NLAMBS>& fmm_level_globs,
@@ -1500,7 +1500,7 @@ inline void convert_and_add_accumulated_planewaves(const FMM_Globals<NTERMS>& fm
                                             const MultiHolder<multiplic,PlaneWaveHolderT>& east,
                                             const MultiHolder<multiplic,PlaneWaveHolderT>& west,
                                             MultiHolder<multiplic,MultipoleHolderT>& child_lexp);
-#endif // ! __DELETED__
+#endif // ! DELETED
 
 template<typename ContentType, int n, int begin, int end, int NTERMS>
 inline void yformmp(double beta,
