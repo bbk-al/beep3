@@ -259,7 +259,7 @@ private:
 #endif // DELETED
 #ifndef PREHYDROPHOBIC
 	unsigned int resize_pot(unsigned int n);
-	double calculate_boundary_energy(	//! Non-electrostatic energies
+	void calculate_boundary_energy(	//! Non-electrostatic energies
 		BasicNodePatch& np,			//!\param The patch to calculate for
 		const MeshInstance& omi,	//!\param The impinging MeshInstance
 		std::vector<unsigned int>& track,	//!\param omi.patches.size(), all 0
@@ -295,8 +295,9 @@ private:
 
 #ifndef PREHYDROPHOBIC
 	// Non-initialised  i.e. reset when used
-	std::vector<double> pot[2];	// To hold non-electrostatic potentials
-	unsigned int psel;			// To select which pot to use (current or old)
+	std::vector<double> hepot[2];	// hydrophobic potential (current or old)
+	std::vector<double> ljpot[2];	// LJ potential (current or old)
+	unsigned int psel;			// To select which pots to use (current or old)
 	double hea;					// Hydrophobic area in range
 #endif // PREHYDROPHOBIC
 
@@ -376,8 +377,12 @@ inline MeshInstance::MeshInstance(const MeshInstance& other) :
 #ifndef PREHYDROPHOBIC
 	allCharges.insert(allCharges.end(),
 					  other.allCharges.begin(), other.allCharges.end());
-	for (int p = 0; p < 2; p++)
-		pot[p].insert(pot[p].end(), other.pot[p].begin(), other.pot[p].end());
+	for (int s = 0; s < 2; s++) {
+		hepot[s].insert(hepot[s].end(),
+						other.hepot[s].begin(), other.hepot[s].end());
+		ljpot[s].insert(ljpot[s].end(),
+						other.ljpot[s].begin(), other.ljpot[s].end());
+	}
 #endif // PREHYDROPHOBIC
 }
     
@@ -407,8 +412,12 @@ inline MeshInstance::MeshInstance(MeshInstance&& other) :
 #ifndef PREHYDROPHOBIC
 	allCharges.insert(allCharges.end(),
 					  other.allCharges.begin(), other.allCharges.end());
-	for (int p = 0; p < 2; p++)
-		pot[p].insert(pot[p].end(), other.pot[p].begin(), other.pot[p].end());
+	for (int s = 0; s < 2; s++) {
+		hepot[s].insert(hepot[s].end(),
+						other.hepot[s].begin(), other.hepot[s].end());
+		ljpot[s].insert(ljpot[s].end(),
+						other.ljpot[s].begin(), other.ljpot[s].end());
+	}
 #endif // PREHYDROPHOBIC
 }
     

@@ -20,6 +20,7 @@
 #include "gts_utils.h"
 #include "off_utils.h"
 #include <boost/scoped_ptr.hpp>
+#include <boost/functional/hash.hpp>
 
 namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
 
@@ -244,10 +245,17 @@ void Mesh::init_charges(const fs::path& xyzqr_filename) {
 			ch = allCharges.cbegin(), ch_end = allCharges.cend();
 		 ch != ch_end; ++ch)
 	{
-		allChargesMap[*ch] = ctr++;
-		if (ch->charge != 0) {
-			Charge c(*ch);
-			charges.push_back(c);
+		// Despite its name, exclude charges with no charge, hydrophobicity or
+		// LJ parameters - these will be HETATMs such as water
+		if (ch->charge != 0 || ch->hydrophobicity != 0 ||
+			(ch->sigma != 0 && ch->epsilon != 0)) {
+			allChargesMap[*ch] = ctr++;
+
+			// And for backward compatibility include only charges in this list
+			if (ch->charge != 0) {
+				Charge c(*ch);
+				charges.push_back(c);
+			}
 		}
 	}
 	

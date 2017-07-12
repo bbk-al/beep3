@@ -7,13 +7,17 @@
  */
 
 #include "mesh_instance.h"
+#include "constants.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <queue>
 #include <functional>
 #include <iostream>
 #include <iomanip>
 #include <unordered_set>
+#include <random>
+#include <boost/functional/hash.hpp>
 
 
 MeshInstance::MeshInstance(
@@ -450,26 +454,20 @@ MeshInstance&
 
 #else // PRE_LOCAL_MOVES
 std::cout << "MeshInstance::move from " << xyz_offset << " to " << translate << std::endl;
-    for (std::vector<boost::shared_ptr<BasicNodePatch>>::iterator
-			it = patches.begin(), end = patches.end();
-		 it != end; ++it)
-    {
+	for (auto& spbnp: patches) {
 		// Change node patch coordinates
-		(static_cast<NodePatch&>(**it)).change_coordinate_frame
+		(static_cast<NodePatch&>(*spbnp)).change_coordinate_frame
 										(xyz_offset, rotate, translate);
 		// Reset the potential, its derivative and non-electrostatic energies
-		(**it).f = 0.0;
-		(**it).h = 0.0;
-		(**it).he = 0.0;
-		(**it).lj = 0.0;
+		spbnp->f = 0.0;
+		spbnp->h = 0.0;
+		spbnp->he = 0.0;
+		spbnp->lj = 0.0;
     }
 
     // set Charges:  relies on allCharges and charges pointing to same Charges
-    for (std::vector<boost::shared_ptr<Charge>>::iterator
-			it = allCharges.begin(), end = allCharges.end();
-		 it != end; ++it)
-    {
-		(**it).Vector::change_coordinate_frame(xyz_offset, rotate, translate);
+	for (auto& spch: allCharges) {
+		spch->Vector::change_coordinate_frame(xyz_offset, rotate, translate);
     }
     
 	// Update object copy of position and rotation - before resetting tree!!
@@ -498,11 +496,16 @@ static constexpr double P5olim{14.75};		// HE P5 Outer limit
 static constexpr double P5ilim{9.84356};	// HE P5 Inner limit
 static constexpr double LJolim{2.5};		// LJ Outer limit
 static constexpr double LJilim{2.3};		// LJ Inner limit
-static constexpr double ELIM{std::max(P5olim, LJolim)};	// Combined range limit
+static constexpr double ELIM{std::max<double>(P5olim, LJolim)};	// Combined 
+
+// Useful debug tools
+static std::mutex dbgmx;
+#define COUT { std::lock_guard<std::mutex> dbglk(dbgmx); std::cout
+#define ENDL std::endl; }
 
 // Returns negative if other not in range of mine under P5 (hydrophobic effect)
 static bool P5range(const BasicNodePatch& mine, const BasicNodePatch& other) {
-//std::cout << "MeshInstance::P5 range in " << std::endl;
+//COUT << "MeshInstance::P5 range in " << ENDL
 	// No point doing anything if the hydrophobicity isn't right
 	if (mine.hydrophobicity >= 0) return false;
 	// positive values should have an effect through longer-range smoothing...
@@ -515,11 +518,11 @@ static bool P5range(const BasicNodePatch& mine, const BasicNodePatch& other) {
 	// Check range and approach
 	double r = v.length();
 	if (r >= P5olim) return false;		// too far away
-	if (v.dot(mine.get_normal()) >= 0) return false; // opposite faces
+	if (r > 0 && v.dot(mine.get_normal()) >= 0) return false; // opposite faces
 	double n = mine.get_normal().dot(other.get_normal());
 	if (n >= 0) return false;			// not enclosing water
 
-//std::cout << "MeshInstance::P5 range out " << std::endl;
+//COUT << "MeshInstance::P5 range out " << ENDL
 	// Otherwise, other is in range of mine for P5
 	return true;
 }
@@ -532,10 +535,10 @@ static double P5(double r, double hydro) {
 	// Return value
 	double e = 0.0;
 
-//std::cout << "MeshInstance::P5 in " << r << " " << hydro << std::endl;
+//COUT << "MeshInstance::P5 in " << r << " " << hydro << ENDL
 	// Apply the linear (inner) or quintic (outer) potentials
 	if (r <= P5ilim) {
-		if (r < 0.0) r = 0.0;  // overlaps reduce volume but treat as contact
+		//if (r < 0.0) r = 0.0;  // overlaps reduce volume but treat as contact
 		e = l[1]*r + l[0];
 	}
 	else // (P5ilim < r < P5olim)
@@ -543,13 +546,13 @@ static double P5(double r, double hydro) {
 
 	// Adjust by strength of hydrophobicity - may have been smoothed here
 	if (hydro != -0.5) e *= (-2)*hydro;
-//std::cout << "MeshInstance::P5 out " << e << std::endl;
+//COUT << "MeshInstance::P5 out " << e << ENDL
 	return e;
 }
 
 static bool LJrange(const Charge& mine, const Charge& other) {
 	// No point doing anything if parameters are set 0
-//std::cout << "MeshInstance::LJ range in " << std::endl;
+//COUT << "MeshInstance::LJ range in " << ENDL
 	if (other.epsilon == 0.0 || other.sigma == 0.0) return false;
 
 	// Cheap range checks
@@ -559,7 +562,7 @@ static bool LJrange(const Charge& mine, const Charge& other) {
 	// In this case it is more efficient to check the outer limit exactly
 	// during the LJ call, so this is deferred
 
-//std::cout << "MeshInstance::LJ range out " << std::endl;
+//COUT << "MeshInstance::LJ range out " << ENDL
 	// Otherwise, other is in range of mine for LJ
 	return true;
 }
@@ -568,7 +571,7 @@ static double LJ(double r, double sigma, double epsilon) {
 	constexpr double m[] = {3136.5686, -68.069, -0.0833111261, 0.746882273};
 	constexpr double k = 0.0163169237;
 
-//std::cout << "MeshInstance::LJ in " << r << " " << sigma << " " << epsilon << std::endl;
+//COUT << "MeshInstance::LJ in " << r << " " << sigma << " " << epsilon << ENDL
 	// Check limits
 	if (r >= LJolim*sigma) return 0.0;
 	if (r == 0.0) return EINT;
@@ -585,15 +588,16 @@ static double LJ(double r, double sigma, double epsilon) {
 	else // (0.0 < r <= LJilim sigma)
 		e = (4 * (sr12 - sr6) + k) * epsilon;
 	if (e > EINT) e = EINT;
-//std::cout << "MeshInstance::LJ out " << e << std::endl;
 
+//COUT << "MeshInstance::LJ out " << e << ENDL
 	return e;
 }
 
 unsigned int MeshInstance::resize_pot(unsigned int n) {
-	if (n > pot[psel].size()) {
-		pot[psel].resize(n);	// Value initialised to 0.0 for extras
-		pot[1-psel].resize(n);
+	if (n > hepot[psel].size()) {
+		for (auto& pot: {hepot, ljpot}) {
+			for (int s = 0; s < 2; s++) pot[s].resize(n); // init 0.0 extras
+		}
 	}
 	return n;
 }
@@ -618,6 +622,14 @@ static auto kahanSum = [](kahanValue& kv, double el) mutable -> double {
 	return kahan(kv.sum, kv.carry, el);
 };
 
+// Utility to generate a random list of integers [0, n)
+static std::vector<unsigned int>shuffle(unsigned int n) {
+	std::vector<unsigned int> rv(n);
+	std::iota(rv.begin(), rv.end(), 0);
+	std::shuffle(rv.begin(), rv.end(), std::mt19937{std::random_device{}()});
+	return rv;
+}
+
 // thread class for calculate_boundary_energy, but actually a little more
 // generic  e.g. supports work queuing although a single constructor list
 // would have done.
@@ -625,9 +637,13 @@ struct CBE_thread {
 	// Primary (only) constructor:
 	// result contains 0: energy, 1: area
 	// trklen is the number of "omi" patches
-	CBE_thread(kahanValueList<2>& result, unsigned int trklen) {
+	CBE_thread(kahanValueList<3>& result, unsigned int trklen) :
+		gen(rd()),
+		uniform(0.0, 1.0)	// Uniform [0,1)
+	{
 		trk.resize(trklen);
 		retval = &result;
+		waiting = false;	// See below, suggests a code issue
 		th = std::thread(&CBE_thread::process, this);
 	};
 	CBE_thread(const CBE_thread&) = delete;	// Not copyable
@@ -639,25 +655,37 @@ struct CBE_thread {
 		bool already_stopping = CBE_thread::stopping;
 		CBE_thread::stopping = true;
 		if (!already_stopping) CBE_thread::cv.notify_all();
+		// This ought not to be necessary but it appears that
+		// a) without the lock worker thread can be in between checking
+		// condition and unlock+wait within cv.wait(), thereby missing both
+		// the change to stopping and the notification.
+		// b) without the waiting flag, there is a deadlock
+		// Probably the code is not structured optimally...
+		if (waiting) {
+			std::lock_guard<std::mutex> lock(CBE_thread::lkq);
+			cv.notify_all();
+		}
 		th.join();
 	}
 	// Immediate stop: a reset is required after this
 	static void halt(void) { halting = true; };
 
 	// Queue a work list
-	using cbeFn = std::function< double(
+	using cbeFn = std::function< void(
 		BasicNodePatch&, std::vector<unsigned int>&, MeshInstance::pt_set&) >;
 	using cbeTpl = std::tuple<cbeFn, PatchList::iterator, PatchList::iterator>;
-	static void push(const cbeTpl& work_item) {
+	//static void push(const cbeTpl& work_item) {	// no std::forward<T> below
+	static void push(cbeTpl&& work_item) {
 		{	// new scope
 			std::lock_guard<std::mutex> lock(CBE_thread::lkq);
-			CBE_thread::q.push(work_item);
+			CBE_thread::q.push(std::make_shared<cbeTpl>(
+									std::forward<cbeTpl>(work_item)));
 		}
 		CBE_thread::cv.notify_one();
 	};
 	// Reset queue and flags
 	static void reset(void) {
-		std::queue<cbeTpl> empty;
+		std::queue<std::shared_ptr<cbeTpl>> empty;
 		CBE_thread::q.swap(empty);
 		CBE_thread::stopping = false;
 		CBE_thread::halting = false;
@@ -665,14 +693,20 @@ struct CBE_thread {
 
 private:
 	// Class attributes to coodinate all threads
-	static std::queue<cbeTpl> q;
+	static std::queue<std::shared_ptr<cbeTpl>> q;
 	static std::mutex lkq;
 	static std::condition_variable cv;
 	static std::atomic<bool> stopping, halting;
 
+	// These are needed to support randomisation
+	std::random_device rd;		// obtain seed for random number engine
+	std::mt19937_64 gen;		// 64-bit mersenne_twister_engine
+	std::uniform_real_distribution<double> uniform;
+
 	// Object attributes
 	std::thread th;
-	kahanValueList<2> *retval;
+	kahanValueList<3> *retval;
+	std::atomic<bool> waiting;
 
 	// Tracking objects
 	// This could be generalised by templating
@@ -686,30 +720,58 @@ private:
 			PatchList::iterator begin, end;
 			{//new scope
 				std::unique_lock<std::mutex> lk(CBE_thread::lkq);
+				waiting = true;
 				CBE_thread::cv.wait(lk, []{return CBE_thread::stopping ||
 												!CBE_thread::q.empty();});
+				waiting = false;
 				if (CBE_thread::stopping && CBE_thread::q.empty()) break;
-				if (!CBE_thread::q.empty())
-					std::tie(work, begin, end) = CBE_thread::q.front();
-				CBE_thread::q.pop();
+				if (!CBE_thread::q.empty()) {
+					std::tie(work, begin, end) = *CBE_thread::q.front();
+					CBE_thread::q.pop();
+				}
 			}
-			CBE_thread::cv.notify_one();	//TODO this should be unnecessary?
+			//CBE_thread::cv.notify_one();	// Not needed! All waiters check q
 			if (work) {
 				for (auto&& it = begin; it != end; it++) {
 					if (halting) break;
+					BasicNodePatch& np = **it;
+
+					// It is possible there are multiple mesh instances in
+					// range of this one - select later ones through MC
+					double che = np.he;
+					static const double kT = beep_constants::Boltzmann_SI
+											* beep_constants::Avogadro / 1000;
+
+					// Now run the cbe method
 					// This could be generalised by returning a tuple to tie
-					double e = work(**it, trk, hitVertices);
-					kahanSum(retval->value[0], e);
-					if ((**it).he != 0.0) {
-						double a = (**it).get_bezier_area();
-						kahanSum(retval->value[1], a);
+					work(np, trk, hitVertices);
+
+					// Update totals - generalise by moving into cbe
+					// For HE, use a simple MC to decide which to keep
+					if (che == 0.0 || np.he <= che ||
+						exp((che-np.he)/kT) > uniform(gen)) {
+						// Accepting the new value - adjust current total
+						kahanSum(retval->value[0], np.he-che);
+					}
+					// Rejecting the new one - reset the NP value
+					else
+						np.he = che;
+
+					// LJ is just summed
+					kahanSum(retval->value[1], np.lj);
+
+					// Not perfect, but try to avoid counting area twice
+					if (!np.hea && np.he != 0.0) {
+						double a = np.get_bezier_area();
+						kahanSum(retval->value[2], a);
+						np.hea = true;
 					}
 				}
 			}
 		}
 	};
 };
-std::queue<CBE_thread::cbeTpl> CBE_thread::q;
+std::queue<std::shared_ptr<CBE_thread::cbeTpl>> CBE_thread::q;
 std::mutex CBE_thread::lkq;
 std::condition_variable CBE_thread::cv;
 std::atomic<bool> CBE_thread::stopping, CBE_thread::halting;
@@ -721,7 +783,7 @@ template <typename T> struct eqFn {
 	bool operator()(T lhs, T rhs) const{ return (lhs == rhs); }
 };
 
-double MeshInstance::calculate_boundary_energy(
+void MeshInstance::calculate_boundary_energy(
 	BasicNodePatch& np,						// The patch to calculate for
 	const MeshInstance& omi,				// The impinging MeshInstance
 	std::vector<unsigned int>& track,		// To avoid repeat omi points
@@ -800,7 +862,6 @@ double MeshInstance::calculate_boundary_energy(
 	}  // each triangle in mesh
 
 	// pt is internal to omi if odd number of crossings
-//TODO set r negative below if internal, unless r exceeds charge radius...
 	bool internal = false;
 	if ((cc%2) == 1) internal = true;
 
@@ -808,11 +869,8 @@ double MeshInstance::calculate_boundary_energy(
 	// and can cut out if still too far.
 	double r = -1.0;	// distance for P5, negative means HE is 0
 	double n = -1.0;	// normal.other-normal, so must be negative
-	if (internal) {
-		r = 0.0;
-	}
 	// Cut out now if nothing was in range
-	else if (vertexSet.size() != 0) {
+	if (vertexSet.size() != 0) {
 		// Not internal and not distant, so calculate the energy
 		// The hydrophobic effect requires a distance, which is in the mean
 		// direction to the omi patches in range from pt.
@@ -836,16 +894,16 @@ double MeshInstance::calculate_boundary_energy(
 			Vector ptmp;
 			if (pt_triangle(pt, tv, dir, hitVertices, &ptmp)) {
 				for (unsigned int i = 0; i < 3; i++) {
-					double r = (tv[i]-ptmp).length();
-					if (r < rmin) {
+					double rtmp = (tv[i]-ptmp).length();
+					if (rtmp < rmin) {
 						vidx = aidx[i];
 						opt = ptmp;
-						rmin = r;
+						rmin = rtmp;
 					}
 				}
 			}
 		}
-		if (rmin == ELIM) return 0.0;	// Turned out nothing in range - how?
+		if (rmin >= ELIM) return;	// Turned out nothing in range - how?
 
 		// Now calculate the energy per unit area for this local direction
 		// Convert energy per unit area to energy and adjust by node angle
@@ -855,7 +913,7 @@ double MeshInstance::calculate_boundary_energy(
 	}
 	if (r >= 0) {
 		double a = np.get_bezier_area();	// seems planar if force_planar
-		np.he = P5(r, np.hydrophobicity) * a*n*(-1);
+		np.he = P5(r*(internal? -1: 1), np.hydrophobicity) * a*n*(-1);
 		if (np.he > EINT) np.he = EINT;		// should not happen for P5
 	}
 
@@ -873,7 +931,11 @@ double MeshInstance::calculate_boundary_energy(
 					// Bad news - EINT and halt all other processing
 					CBE_thread::halt();
 					np.lj = EINT;
-					return EINT;
+					np.he = 0.0;	// almost certainly unnecessary
+					std::cout << "LJ collision detected between mesh instances "
+							  << instance_id << " and "
+							  << omi.instance_id << std::endl;
+					return;
 				}
 				// Good news - processing can continue as normal...
 			}
@@ -881,47 +943,52 @@ double MeshInstance::calculate_boundary_energy(
 			np.lj += LJ(r, otch.sigma, otch.epsilon) /
 					mesh_ptr->get_npcount(np.ch_idx);
 		}
+		if (np.lj > EINT) np.lj = EINT;
 	}
-	if (np.lj > EINT) np.lj = EINT;
-
-	// Return the combined result
-	return np.he+np.lj;
 }
 
 void MeshInstance::update_energy(MeshInstanceList& mis) {
 	static unsigned int num_threads = (std::thread::hardware_concurrency() > 0 ?
 		std::thread::hardware_concurrency() : 1);
-	std::cout << __PRETTY_FUNCTION__ << num_threads << " threads" << std::endl;
+	std::cout << num_threads << " threads" << std::endl;
 
-	// Hydrophobic area of contact is only the new contact area for the move
+	// Hydrophobic effect is only valid relative to the moving MI, and
+	// area of contact is only the new contact area for the move
 	hea = 0.0;
-	double heac = 0.0;	// Carry for area
+	for (auto& nit: patches) { nit->he = 0.0; nit->hea = false; }
+
 	// Update the energy resulting from all other MIs
-	for (auto& spmi: mis) {
+	for (auto& spmi: mis) {	// no return or break;  continue is ok
 		MeshInstance& omi = *spmi;
 		if (omi.instance_id == instance_id) continue;
 		resize_pot(omi.instance_id+1);
 		omi.resize_pot(instance_id+1);
 
 		// Save current values as now previous, reset current
-		pot[1-psel][omi.instance_id] = pot[psel][omi.instance_id];
-		pot[psel][omi.instance_id] = 0.0;
-		omi.pot[1-omi.psel][instance_id] = omi.pot[omi.psel][instance_id];
-		omi.pot[omi.psel][instance_id] = 0.0;
+		MeshInstance* m[2] = {this, &omi};
+		for (int i = 0; i < 2; i++) {
+			unsigned int oid = m[1-i]->instance_id;
+			for (auto& pot: {m[i]->hepot, m[i]->ljpot}) {
+				pot[1-m[i]->psel][oid] = pot[m[i]->psel][oid];
+				pot[m[i]->psel][oid] = 0.0;
+			}
+		}
+		// And reset the he data for this MI
 		omi.hea = 0.0;
+		for (auto& onit: omi.patches) { onit->he = 0.0; onit->hea = false; }
 
 		// Fast check on range: too far apart and no possible interaction
 		if ((xyz_offset - omi.xyz_offset).length() > radius + omi.radius + ELIM)
 			continue;
 
 		// Update energy from impact of other mesh instances
-		MeshInstance* mi[] = {this, &omi};
-		for (int i = 0; i < 2; i++) {
+		MeshInstance* mi[2] = {this, &omi};
+		for (int i = 0; i < 2; i++) {	// no return or break;  continue is ok
 			auto& nps = mi[i]->patches;
 			auto nit = nps.begin();
 			unsigned int npatches = nps.size();
 			unsigned int onpatches = mi[1-i]->patches.size();
-			std::vector<kahanValueList<2>> r(num_threads);
+			std::vector<kahanValueList<3>> r(num_threads);
 
 			// Start threads in a new scope to limit their existence
 			if (num_threads > 1) {
@@ -937,40 +1004,70 @@ void MeshInstance::update_energy(MeshInstanceList& mis) {
 					auto f = std::bind(&MeshInstance::calculate_boundary_energy,
 										mi[i], _1, *(mi[1-i]), _2, _3);
 					unsigned int block = npatches/j;
-					auto t = std::make_tuple(f, nit, nit+block);
-					CBE_thread::push(t);
+					auto nite = (npatches > block ? nit + block : nps.end());
+					CBE_thread::push(std::make_tuple(f, nit, nite));
 
 					npatches -= block;
+					if (npatches <= 0) break;
 					nit += block;
 				}
-//TODO and break if EINT exceeded - but no sum yet?  Need a way to post results
-//from threads for main thread to sum - e.g. for threads to detect EINT and
-//stop, notifying all others
 			}	// Main thread sits here until worker threads complete
 			else {
 				// threading not in vogue - just run in main thread
 				std::vector<unsigned int>trk(onpatches, 0);
+				static const double kT = beep_constants::Boltzmann_SI
+											* beep_constants::Avogadro / 1000;
+				// These are needed to support randomisation
+				std::random_device rd;
+				std::mt19937_64 gen(rd());
+				std::uniform_real_distribution<double> uniform(0.0, 1.0);
+
 				for (auto& nit: nps) {
 					BasicNodePatch& np = *nit;
-					double e = calculate_boundary_energy(np, *(mi[1-i]), trk);
-					kahanSum(r[0].value[0], e);
-					if (np.he != 0.0) {
+					// It is possible there are multiple mesh instances in
+					// range of this one - select later ones through MC
+					double che = np.he;
+					calculate_boundary_energy(np, *(mi[1-i]), trk);
+
+					// Update totals
+					// For HE, use a simple MC to decide which to keep
+					if (che == 0.0 || np.he < che ||
+						exp((che-np.he)/kT) > uniform(gen)) {
+						// Accepting the new value - adjust current total
+						kahanSum(r[0].value[0], np.he-che);
+					}
+					// Rejecting the new one - reset the NP value
+					else
+						np.he = che;
+
+					// LJ is just summed
+					kahanSum(r[0].value[1], np.lj);
+
+					// Avoid counting area twice
+					if (!np.hea && np.he != 0.0) {
 						double a = np.get_bezier_area();
-						kahanSum(r[0].value[1], a);
+						kahanSum(r[0].value[2], a);
+						np.hea = true;
 					}
 				}
 			}
 
 			// Final sums and limit checks (threads completed above)
-			auto& mipot = mi[i]->pot[mi[i]->psel][mi[1-i]->instance_id];
-			double ce = 0.0, ca = 0.0;
+			double ce[2] = {0.0, 0.0}, ca = 0.0;
 			for (auto& kv: r) {
-				ce += kv.value[0].carry;
-				kahan(mipot, ce, kv.value[0].sum);
-				ca += kv.value[1].carry;
-				kahan(mi[i]->hea, ca, kv.value[1].sum);
+				int val = 0;
+				for (auto mipot:
+						{&mi[i]->hepot[mi[i]->psel][mi[1-i]->instance_id],
+						 &mi[i]->ljpot[mi[i]->psel][mi[1-i]->instance_id]})
+				{
+					ce[val] += kv.value[val].carry;
+					kahan(*mipot, ce[val], kv.value[val].sum);
+					val++;
+					if (*mipot > EINT) *mipot = EINT;
+				}
+				ca += kv.value[val].carry;
+				kahan(mi[i]->hea, ca, kv.value[val].sum);
 			}
-			if (mipot >= EINT) mipot = EINT;
 		}	// each way
 
 		// Report the changes in total and hydrophobic areas
@@ -983,8 +1080,9 @@ void MeshInstance::update_energy(MeshInstanceList& mis) {
 
 void MeshInstance::revert_energy(MeshInstanceList& mis) {
 	for (auto& spmi: mis) {
-		MeshInstance& omi = *spmi;
-		omi.pot[omi.psel][instance_id] = omi.pot[1-omi.psel][instance_id];
+		if (spmi->instance_id == instance_id) continue;
+		for (auto& pot: {spmi->hepot, spmi->ljpot})
+			pot[spmi->psel][instance_id] = pot[1-spmi->psel][instance_id];
 	}
 	psel = 1-psel;
 }
@@ -1008,18 +1106,24 @@ double MeshInstance::calculate_energy(
 	if (electrostatics)
 		E = mesh_ptr->calculate_energy(kappa, Dprotein, Dsolvent,
 	                                      fvals, hvals);
-double F = E;
+    std::cout << "Energy for mesh " << instance_id << " (lib_id="
+	          << mesh_ptr->get_id() << ")" << std::setprecision(10)
+			  << " electrostatic=" << E;
 	double c = 0.0, s;
-	for (const auto& p: pot[psel]) {
-		// Kahan sum of contributions
-		s = E + (p - c);
-		c += (s - E) - p;
-		E = s;
+	const std::vector<double>* pot[] = {hepot, ljpot};
+	const char* name[] = {" HE=", " LJ="};
+	for (int p = 0; p < 2; p++) {
+		double F = E;
+		for (const auto& e: pot[p][psel]) {
+			// Kahan sum of contributions
+			s = E + (e - c);
+			c += (s - E) - e;
+			E = s;
+		}
+		std::cout << name[p] << E-F;
 	}
 #endif // PREHYDROPHOBIC
-    std::cout << "Energy for mesh " << instance_id << " (lib_id="
-	          << mesh_ptr->get_id() << ") = " << std::setprecision(10)
-	          << E << std::endl;
+	std::cout << " total=" << E << std::endl;
     return E;
 }
 
@@ -1146,7 +1250,8 @@ void MeshInstance::kinemage_vals(
 						  np.he, np.lj, np.f, np.h};
 #endif // PREHYDROPHOBIC
 		for (int i = 0; i < kin_nvals; i++)
-			if (getscale[i]) scale[i] = std::max(scale[i], fabs(value[i]));
+			if (getscale[i])
+				scale[i] = std::max<double>(scale[i], fabs(value[i]));
 	}
 	for (int i = 0; i < kin_nvals; i++)
 {

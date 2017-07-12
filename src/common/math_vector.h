@@ -597,11 +597,11 @@ inline std::string Quaternion::str() const
 }
 
 inline Quaternion Quaternion::operator*(const Quaternion& q) const {
-	Quaternion p(*this);
-	p.a = p.a*q.a - p.b*q.b - p.c*q.c - p.d*q.d;
-	p.b = p.a*q.b + p.b*q.a + p.c*q.d - p.d*q.c;
-	p.c = p.a*q.c + p.c*q.a + p.d*q.b - p.b*q.d;
-	p.d = p.a*q.d + p.d*q.a + p.b*q.c - p.c*q.b;
+	Quaternion p;
+	p.a = a*q.a - b*q.b - c*q.c - d*q.d;
+	p.b = a*q.b + b*q.a + c*q.d - d*q.c;
+	p.c = a*q.c + c*q.a + d*q.b - b*q.d;
+	p.d = a*q.d + d*q.a + b*q.c - c*q.b;
 	return p;
 }
 

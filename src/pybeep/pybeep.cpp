@@ -215,6 +215,7 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def("__str__", &Quaternion::str)
         .def("inverse", &Quaternion::inverse)
         .def("normalise", &Quaternion::normalise)
+        .def("__mul__",&Quaternion::operator*)
 		.def("rand", &Quaternion::rand).staticmethod("rand")
 		;
  

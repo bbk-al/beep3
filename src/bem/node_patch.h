@@ -165,7 +165,12 @@ public:
     double f;	// Potential
     double h;	// Normal derivative
 #ifndef PREHYDROPHOBIC
-	double he;	// Hydrophobic effect
+	double he;	// Hydrophobic effect - only valid for the moved MeshInstance
+	bool hea;	// Used to track area summation
+//TODO this should be private and wrapped in methods
+//TODO f & h and he, hea and lj are separately reset - should be together
+// and use a common reset method
+	double che;	// Used to record current he value during processing
 	double lj;	// Lennard-Jones
 #endif // PREHYDROPHOBIC
 	// Referenced mainly in Mesh

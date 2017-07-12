@@ -290,8 +290,10 @@ MeshInstance& BEEP::move_mesh_instance(
 #ifndef PREHYDROPHOBIC
 	// Energy updates are required
 	resolve = true;		// BEEP needs to solve
-	if (id == previd && offset == prevloc && rotation == unrot)
+	if (id == previd && offset == prevloc && rotation == unrot) {
 		m.revert_energy(meshes); // This is a move reversal, revert quickly
+		id = meshes.size();		// No second reversion allowed...
+	}
 	else
 		m.update_energy(meshes); // Revise non-electrostatic energies now
 
