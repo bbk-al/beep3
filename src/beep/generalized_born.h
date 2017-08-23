@@ -18,6 +18,7 @@
 #include "../bem/quad_point.h"
 #include "../bem/png1.h"
 #include "../bem/constants.h"
+#include "../bem/mesh.h"
 
 class GeneralizedBorn
 {
@@ -27,11 +28,15 @@ public:
     GeneralizedBorn(const std::string gts_filename, const std::string& charges_filename)
     {
         // only need these whilst reading in mesh
-        std::vector<Vertex> vertices;
-        std::vector<Triangle> triangles;
+		Mesh::IdxListN<2> edge_list;
+		Mesh::IdxListN<3> triangle_list;
 
         Charge::read_charges_from_file(charges_filename, charges, true); // do not skip zero charges- need to know number of atoms
-        GTS_Surface::read_mesh_from_file(gts_filename, vertices, triangles);
+		Mesh m;
+        std::vector<Vertex>& vertices = m.get_vertices();
+        GTS_Surface::read_mesh_from_file(gts_filename, vertices, edge_list, triangle_list);
+		m.create_triangles_from_vertices(edge_list, triangle_list);
+		std::vector<Triangle>& triangles = m.get_triangles();
 
         // Now loop over the triangles and convert them into Bezier triangles,
         // then extract quadrature points from them.

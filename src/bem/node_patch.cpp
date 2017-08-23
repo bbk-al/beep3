@@ -81,11 +81,11 @@ BasicNodePatch::BasicNodePatch(
     bezier_area = 0.0;
     planar_area = 0.0;
 
-    for (const auto& idx: v.get_triangle_indices()) {
+    for (const auto& tidx: v.get_triangle_indices()) {
 #ifdef PRETRIPTR
-        const BasicTriangle& tri = *(mesh.get_triangle_ptr(idx));
+        const BasicTriangle& tri = *(mesh.get_triangle_ptr(tidx));
 #else
-        const Triangle& tri = mesh.get_triangle_ptr(idx);
+        const Triangle& tri = mesh.get_triangle_ptr(tidx);
 #endif // PRETRIPTR
         planar_area += tri.get_planar_area() / 3.0;
         //bezier_area += tri.get_area() / 3.0;
@@ -315,11 +315,11 @@ boost::shared_ptr<QuadList> BasicNodePatch::generate_points(
     const std::vector<BasicTriangle*>& triangles = mesh.get_triangle_ptrs();
 #endif // PRETRIPTR
 
-    for (const auto& idx: v.get_triangle_indices()) {
+    for (const auto& tidx: v.get_triangle_indices()) {
 #ifdef PRETRIPTR
-        const BasicTriangle& tri = *(triangles[idx]);
+        const BasicTriangle& tri = *(triangles[tidx]);
 #else
-		const Triangle& tri = mesh.get_triangle_ptr(idx);
+		const Triangle& tri = mesh.get_triangle_ptr(tidx);
 #endif // PRETRIPTR
  
         try {
@@ -348,11 +348,11 @@ BasicNodePatch::get_edge_points(std::vector<PointNormal>& edge_points) const
 #endif // PRETRIPTR
 
     // create list of vertices in order which define the node patch connectivity
-    for (const auto& idx: v.get_triangle_indices()) {
+    for (const auto& tidx: v.get_triangle_indices()) {
 #ifdef PRETRIPTR
-        const Triangle& tri = dynamic_cast<Triangle&>(*(triangles[idx]));
+        const Triangle& tri = dynamic_cast<Triangle&>(*(triangles[tidx]));
 #else
-		const Triangle& tri = mesh.get_triangle_ptr(idx);
+		const Triangle& tri = mesh.get_triangle_ptr(tidx);
 #endif // PRETRIPTR
 
         Vector a;

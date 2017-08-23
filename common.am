@@ -4,3 +4,4 @@
 if WITH_OPENCL
     DEFS += -DOPENCL
 endif
+#AM_CXXFLAGS = -std=c++1z

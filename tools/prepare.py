@@ -9,6 +9,10 @@ import os
 import shutil
 import tempfile
 from os.path import basename, splitext
+from pathlib import Path
+import time
+from centre import calculate_mass
+
 
 def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename=""):
 
@@ -21,8 +25,8 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
         
         # figure out if the pqr_filename really is pqr or if have been passed
         # in an xyzqr instead
-        stem_filename, ext = splitext(basename(pqr_filename)) # remove the extension
-        stem_filename = os.path.join(temp_dir, stem_filename)
+        base_filename, ext = splitext(basename(pqr_filename)) # remove the extension
+        stem_filename = os.path.join(temp_dir, base_filename)
         if ext == ".xyzqr":
             xyzqr_filename = pqr_filename
             pqr_filename = ""
@@ -44,7 +48,7 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
         assert(ext == ".gts" or ext == ".off")
         stem_filename = os.path.join(temp_dir, stem_filename)
         
-        mesh = Mesh(mesh_filename, xyzqr_filename, True)
+        mesh = Mesh(mesh_filename, xyzqr_filename, True, False, False)
 
         energies_filename = "%s.energies" %(stem_filename)
         mesh.write_energies(energies_filename)
@@ -52,9 +56,37 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
         
         if (centre_filename == ""):
             centre_filename = "%s.centre" %(stem_filename)
-            print(mesh.get_centre(), file=open(centre_filename,'w'))
+            pdbhfile = Path(f"{base_filename}H.pdb")
+            if pdbhfile.is_file():
+                (m,com) = calculate_mass(str(pdbhfile))
+                print(com, file=open(centre_filename,'w'))
+                print(f"Using centre of mass from {str(pdbhfile)}")
+            else:
+                print(mesh.get_centre(), file=open(centre_filename,'w'))
+                print(f"Using charge centre")
         mtz.add(centre_filename, basename(centre_filename))
         
+        # Check for the mesh2 file
+        meshplusfile = Path(f"{base_filename}+{ext}")
+        mesh2file = Path(f"{stem_filename}2{ext}")
+        e2file = Path(f"{stem_filename}2.energies")
+        print(f"meshplusfile {str(meshplusfile)}: {meshplusfile.is_file()}")
+        if meshplusfile.is_file():
+            meshplus = Mesh(str(meshplusfile), xyzqr_filename, True, False,True)
+            st = time.perf_counter()
+            mesh2 = Mesh(mesh.create_mesh2(meshplus, True))
+            print(f"Meshing time {time.perf_counter()-st}")
+            mesh2.write_mesh(str(mesh2file))
+            mtz.add(str(mesh2file), basename(str(mesh2file)))
+            mesh2.write_energies(str(e2file))
+            print(f"{mesh2.num_node_patches} mesh2 patches")
+            kin = mesh.kinemage_meshing()
+            out = open(f"{base_filename}2.kin",'w')
+            print(kin,file=out)
+            print(f"output {base_filename}2.kin, {len(kin)}")
+            out.close()
+            mtz.add(str(e2file), basename(str(e2file)))
+
         # create xml file
         from xml.dom.minidom import Document
         doc = Document()
@@ -71,9 +103,13 @@ def precalculate_mesh(mtz_filename, mesh_filename, pqr_filename, centre_filename
 
         if (pqr_filename != ""): create_xml_node("pqr",pqr_filename)
         create_xml_node("mesh",mesh_filename)
+        if mesh2file.is_file():
+            create_xml_node("mesh2",str(mesh2file))
         create_xml_node("xyzqr",xyzqr_filename)
         create_xml_node("centre",centre_filename)
         create_xml_node("energies",energies_filename)
+        if e2file.is_file():
+            create_xml_node("energies2",str(e2file))
         
         # Print our newly created XML
         xml_filename = os.path.join(temp_dir, "definition.xml")

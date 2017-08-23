@@ -45,7 +45,9 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/acx_pthread.m4 \
 	$(top_srcdir)/m4/ax_check_cl.m4 \
 	$(top_srcdir)/m4/ax_lang_compiler_ms.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
+	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
+	$(top_srcdir)/m4/lt~obsolete.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -60,10 +62,9 @@ beep_DEPENDENCIES = ../bem/libbem.la
 beep_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
 	--mode=link $(CXXLD) $(AM_CXXFLAGS) $(CXXFLAGS) \
 	$(beep_LDFLAGS) $(LDFLAGS) -o $@
-am_gb_OBJECTS = gb-generalized_born.$(OBJEXT) gb-triangle.$(OBJEXT) \
-	gb-vertex.$(OBJEXT)
+am_gb_OBJECTS = gb-generalized_born.$(OBJEXT)
 gb_OBJECTS = $(am_gb_OBJECTS)
-gb_LDADD = $(LDADD)
+gb_DEPENDENCIES = ../bem/libbem.la
 gb_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
 	--mode=link $(CXXLD) $(AM_CXXFLAGS) $(CXXFLAGS) $(gb_LDFLAGS) \
 	$(LDFLAGS) -o $@
@@ -115,6 +116,7 @@ CXXFLAGS = -g -O2
 CYGPATH_W = echo
 DEFS = -DHAVE_CONFIG_H $(am__append_1)
 DEPDIR = .deps
+DLLTOOL = false
 DSYMUTIL = 
 DUMPBIN = 
 ECHO_C = 
@@ -137,7 +139,9 @@ LIBTOOL = $(SHELL) $(top_builddir)/libtool
 LIPO = 
 LN_S = ln -s
 LTLIBOBJS = 
+LT_SYS_LIBRARY_PATH = 
 MAKEINFO = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.2/missing --run makeinfo
+MANIFEST_TOOL = :
 MKDIR_P = /bin/mkdir -p
 NM = /usr/bin/nm -B
 NMEDIT = 
@@ -150,7 +154,6 @@ PACKAGE_BUGREPORT = d.fallaize@ucl.ac.uk
 PACKAGE_NAME = beep
 PACKAGE_STRING = beep 0.2
 PACKAGE_TARNAME = beep
-PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = 0.2
 PATH_SEPARATOR = :
 PTHREAD_CC = gcc
@@ -167,6 +170,7 @@ abs_builddir = /d/mw6/u/la002/pjt/src/beep-0.2/src/beep
 abs_srcdir = /d/mw6/u/la002/pjt/src/beep-0.2/src/beep
 abs_top_builddir = /d/mw6/u/la002/pjt/src/beep-0.2
 abs_top_srcdir = /d/mw6/u/la002/pjt/src/beep-0.2
+ac_ct_AR = ar
 ac_ct_CC = gcc
 ac_ct_CXX = g++
 ac_ct_DUMPBIN = 
@@ -201,7 +205,6 @@ libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
 localstatedir = ${prefix}/var
-lt_ECHO = echo
 mandir = ${datarootdir}/man
 mkdir_p = /bin/mkdir -p
 oldincludedir = /usr/include
@@ -221,7 +224,8 @@ beep_SOURCES = beep.cpp beep.h beep_main.cpp
 beep_LDADD = ../bem/libbem.la 
 beep_LDFLAGS = -pg -lgomp -lboost_program_options
 beep_CPPFLAGS = -I/usr/local/cuda/include -g -fopenmp
-gb_SOURCES = generalized_born.cpp generalized_born.h ../bem/triangle.cpp ../bem/vertex.cpp 
+gb_SOURCES = generalized_born.cpp generalized_born.h
+gb_LDADD = ../bem/libbem.la 
 gb_LDFLAGS = -lgsl -lgslcblas -lboost_filesystem -lboost_system 
 gb_CPPFLAGS = -g
 all: all-am
@@ -317,26 +321,27 @@ distclean-compile:
 include ./$(DEPDIR)/beep-beep.Po
 include ./$(DEPDIR)/beep-beep_main.Po
 include ./$(DEPDIR)/gb-generalized_born.Po
-include ./$(DEPDIR)/gb-triangle.Po
-include ./$(DEPDIR)/gb-vertex.Po
 
 .cpp.o:
-	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
+	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Po
 #	source='$<' object='$@' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(CXXCOMPILE) -c -o $@ $<
 
 .cpp.obj:
-	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ `$(CYGPATH_W) '$<'`
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.obj$$||'`;\
+	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ `$(CYGPATH_W) '$<'` &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Po
 #	source='$<' object='$@' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(CXXCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
 
 .cpp.lo:
-	$(LTCXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Plo
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.lo$$||'`;\
+	$(LTCXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Plo
 #	source='$<' object='$@' libtool=yes \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(LTCXXCOMPILE) -c -o $@ $<
@@ -382,34 +387,6 @@ gb-generalized_born.obj: generalized_born.cpp
 #	source='generalized_born.cpp' object='gb-generalized_born.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o gb-generalized_born.obj `if test -f 'generalized_born.cpp'; then $(CYGPATH_W) 'generalized_born.cpp'; else $(CYGPATH_W) '$(srcdir)/generalized_born.cpp'; fi`
-
-gb-triangle.o: ../bem/triangle.cpp
-	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT gb-triangle.o -MD -MP -MF $(DEPDIR)/gb-triangle.Tpo -c -o gb-triangle.o `test -f '../bem/triangle.cpp' || echo '$(srcdir)/'`../bem/triangle.cpp
-	$(am__mv) $(DEPDIR)/gb-triangle.Tpo $(DEPDIR)/gb-triangle.Po
-#	source='../bem/triangle.cpp' object='gb-triangle.o' libtool=no \
-#	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
-#	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o gb-triangle.o `test -f '../bem/triangle.cpp' || echo '$(srcdir)/'`../bem/triangle.cpp
-
-gb-triangle.obj: ../bem/triangle.cpp
-	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT gb-triangle.obj -MD -MP -MF $(DEPDIR)/gb-triangle.Tpo -c -o gb-triangle.obj `if test -f '../bem/triangle.cpp'; then $(CYGPATH_W) '../bem/triangle.cpp'; else $(CYGPATH_W) '$(srcdir)/../bem/triangle.cpp'; fi`
-	$(am__mv) $(DEPDIR)/gb-triangle.Tpo $(DEPDIR)/gb-triangle.Po
-#	source='../bem/triangle.cpp' object='gb-triangle.obj' libtool=no \
-#	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
-#	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o gb-triangle.obj `if test -f '../bem/triangle.cpp'; then $(CYGPATH_W) '../bem/triangle.cpp'; else $(CYGPATH_W) '$(srcdir)/../bem/triangle.cpp'; fi`
-
-gb-vertex.o: ../bem/vertex.cpp
-	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT gb-vertex.o -MD -MP -MF $(DEPDIR)/gb-vertex.Tpo -c -o gb-vertex.o `test -f '../bem/vertex.cpp' || echo '$(srcdir)/'`../bem/vertex.cpp
-	$(am__mv) $(DEPDIR)/gb-vertex.Tpo $(DEPDIR)/gb-vertex.Po
-#	source='../bem/vertex.cpp' object='gb-vertex.o' libtool=no \
-#	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
-#	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o gb-vertex.o `test -f '../bem/vertex.cpp' || echo '$(srcdir)/'`../bem/vertex.cpp
-
-gb-vertex.obj: ../bem/vertex.cpp
-	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT gb-vertex.obj -MD -MP -MF $(DEPDIR)/gb-vertex.Tpo -c -o gb-vertex.obj `if test -f '../bem/vertex.cpp'; then $(CYGPATH_W) '../bem/vertex.cpp'; else $(CYGPATH_W) '$(srcdir)/../bem/vertex.cpp'; fi`
-	$(am__mv) $(DEPDIR)/gb-vertex.Tpo $(DEPDIR)/gb-vertex.Po
-#	source='../bem/vertex.cpp' object='gb-vertex.obj' libtool=no \
-#	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
-#	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gb_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o gb-vertex.obj `if test -f '../bem/vertex.cpp'; then $(CYGPATH_W) '../bem/vertex.cpp'; else $(CYGPATH_W) '$(srcdir)/../bem/vertex.cpp'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo
@@ -617,6 +594,7 @@ uninstall-am: uninstall-binPROGRAMS
 	pdf pdf-am ps ps-am tags uninstall uninstall-am \
 	uninstall-binPROGRAMS
 
+#AM_CXXFLAGS = -std=c++1z
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

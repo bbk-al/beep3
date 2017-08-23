@@ -114,266 +114,21 @@ void MeshInstance::reset_mesh_tree() {
 }
 #endif
 
-// Does a line // to z-axis in +ve direction from pt pass through triangle tv?
-// This local function and object makes it easier to test simple cases
-
-// Determine if z-line from pt crosses triangle
-// NB z-line is here generalised to any semi-infinite line.
-// Note ptr may not be changed if the z-line never reaches the triangle plane
-// and if ptr is provided the caller must check for repeat hits.
-static bool pt_triangle2(const Vector& pt, const Vector* tv, const Vector& z,
-				 MeshInstance::pt_set& hitVertices, Vector *ptr = nullptr)
-{
-	constexpr unsigned int perm[6] = { 1, 2, 2, 0, 0, 1 };
-	static const Vector origin = Vector(0,0,0);
-	int i;		// general index
-
-	// Find intersection of z-line with triangle plane
-	for (i = 0; i < 3; i++) if (tv[i] != pt) break;
-	if (i >= 3) {
-		std::cerr << "MeshInstance~pt_triangle found null triangle"
-				  << std::endl;
-		throw std::exception();
-	}
-	const Vector& v = tv[i];
-	// normal to node patch no use here - get a normal to triangle
-	Vector n = (tv[2]-tv[1]).cross(tv[1]-tv[0]);
-	Vector pz;
-	double zdotn = z.dot(n);
-	Vector q, r;
-	// find a point in the plane that lies on the z-line from pt
-	if (zdotn == 0.0) {				// z-dir is in the triangle's plane
-		if ((v-pt).dot(n) == 0.0) {	// pt is also in the plane
-			pz = pt;				// so use pt as the point in the plane
-			// If the caller asked for the nearest point on the triangle but the
-			// z-direction was in the plane, need to calculate the nearest point
-			if (ptr) {
-				// For each edge, find the nearest point in z-dir
-				double d, dmin = (tv[3]-pt).length2();
-				*ptr = tv[3];	// Just an initial point to be improved upon
-				for (i = 0; i < 3; i++) {
-					// Reduce the problem to 2 or 1 dimensions
-					q = (tv[perm[2*i]] - tv[i]).normalised();  // not 0,0,0
-					double zdotq = z.dot(q);
-					r = (z-q*zdotq);		// orthogonal to q
-					if (r == origin) {
-						// Simple linear problem along q from tv[i]
-						pz = tv[i];	// other vertices consided in loop
-					}
-					else {
-						r = r.normalised();
-						// 2-D problem, line1 = tv[i] + a q;  line2 = pt + b r
-						// Intersect at:
-						pz = pt + z*r.dot(tv[i]-pt)/sqrt(1-(zdotq)*(zdotq));
-					}
-					d = (pz-pt).length2();
-					if (d < dmin) {
-						dmin = d;
-						*ptr = pz;
-					}
-				}
-			}
-		}
-		else
-			return false;			// cannot cross triangle if pt not in plane
-	}
-	else {							// z-dir is not in the plane
-		double dz = ((v-pt).dot(n) / zdotn);
-		if (dz < 0) return false;	// (z-line is _semi_-infinite)
-		pz = dz * z + pt;
-		if (ptr) *ptr = pz;
-	}
-
-	// Is pz in any of the half-planes that define the triangle?
-	// In addition, for any triangle that is crossed at a vertex or edge,
-	// there will be other triangles that are crossed at the same place.
-	// This needs detecting to avoid multiple counts.  Although less than // half the triangles at this stage will be crossed, it is efficient
-	// to carry out the vertex/edge checks here rather than later.
-	double dot;
-	double onedge = -1.0;
-	for (i = 0; i < 3; i++) {
-		// Get unit vector along an edge and vectors from opposite vertex and pz
-		n = (tv[perm[2*i]]-tv[perm[2*i+1]]).normalised();
-		q = tv[perm[2*i]]-tv[i];
-		r = tv[perm[2*i]]-pz;
-
-		// Check if pz is actually on the edge (or vertex)
-		dot = q.dot(r);	// on edge if parallel, but can be antiparallel...
-		if (dot >= 0.0 && dot*dot == q.length2() * r.length2()) onedge = dot;
-
-		// Obtain the normals to the selected edge from tv[i] and pt
-		q = q - q.dot(n) * n;
-		r = r - r.dot(n) * n;
-#ifdef LOCAL_TEST // DEBUG
-		std::cout << "MeshInstance~pt_triangle pt=" << pt << " pz=" << pz
-				<< " T=" << tv[0] << "," << tv[1] << "," << tv[2]
-				<< " n=" << n << " q=" << q << " r=" << r << " s=" << q.dot(r)
-				<< std::endl;
-#endif // DEBUG
-		// If these normals are opposed, then pz is outside triangle
-		if (q.dot(r) < 0) break;
-	}
-	// If loop did not complete then pt is outside triangle
-	if (i < 3) return false;
-
-	// We have a crossing, but if on an edge, then need to check for repeats.
-	// However, that is up to the caller if they asked for the nearest hit.
-	if (ptr || onedge < 0.0) return true;	// Strictly inside triangle
-
-	// Check for repeat hits
-	if (onedge == 0.0) {	// Hit a vertex!  Immensely unlikely!
-		// This is actually quite annoying.  The only way to avoid repeats
-		// is to maintain a list of hits;  but that list must be reset
-		// for each caller call, so we have to provide a way to indicate that.
-		// Since this function is local to the module for the one purpose,
-		// (which makes testing it easier) it makes sense to let pt_is_internal
-		// reset the list itself...
-		// First, though, check we did actually hit a vertex - precision?
-		for (i = 0; i < 3; i++) if (tv[i] == pz) break;
-		if (i >= 3) {
-			std::cout << "MeshInstance::pt_is_internal confused! "
-					  << pz << " " << tv[0] << " " << tv[1] << " " << tv[2]
-					  << std::endl;
-			std::cerr << "MeshInstance::pt_is_internal confused! Carrying on "
-					  << std::endl;
-			return true;
-		}
-std::cout << "MeshInstance~pt_triangle Way-hey! Hit a vertex!! " <<  pt << ": " << pz << "=" << tv[i] << std::endl;
-		if (hitVertices.count(pz) > 0) return false;  // Seen it already
-std::cout << "MeshInstance~pt_triangle new hit" << std::endl;
-		hitVertices.insert(pz);
-		return true;
-	}
-std::cout << "MeshInstance~pt_triangle Hey! Hit an edge! " << pt << std::endl;
-	// Not a vertex, so strictly an edge - this is easy!  Always hit twice...
-	static bool flip = false;
-	flip = !flip;	// This trick is only an issue if caller needs to identify
-	return flip;	// each triangle that is hit;  this just ensures half count.
-}
-
-// This is the efficient version for just testing internality
 static bool pt_triangle(const Vector& pt, const Vector* tv, int zdir,
-						MeshInstance::pt_set& hitVertices)
-{
-	const Vector z = Vector(0,0,zdir);	// z-line used as indexing is neater
-	int i;		// general index
-
-	// Check straddles
-	for (i = 0; i < 2; i++) {
-		auto il = {tv[0](i), tv[1](i), tv[2](i)};
-		if (pt(i) < std::min<double>(il) || pt(i) > std::max<double>(il)) break;
-	}
-	if (i < 2) return false;
-
-	return pt_triangle2(pt, tv, z, hitVertices);
+						meshing::PtSet& hitVertices) {
+	return Meshing<MeshInstance>::pt_triangle(pt, tv, zdir, hitVertices);
 }
 
-// General version to get the nearest node patch in a given direction
-// See pt_triangle2 for parameters
-static bool pt_triangle(const Vector& pt, const Vector* tv, const Vector& z,
-						MeshInstance::pt_set& hitVertices,
-						Vector *ptr = nullptr)
-{
-	constexpr unsigned int perm[6] = { 1, 2, 2, 0, 0, 1 };
-	int i;		// general index
-
-	// Although more complicated than the version above, it is still much
-	// more efficient to check for straddling than to skip it.
-	// Find two normals to z in plane including origin
-	for (i = 0; i < 3; i++) if (z(i) != 0.0) break;
-	if (i >= 3) {
-		// Trick question - null z
-		std::cerr << "MeshInstance pt_triangle(pt,tv,z) null z" << std::endl;
-		std::cout << "MeshInstance pt_triangle(pt,tv,z) null z" << std::endl;
-		throw std::exception();
-	}
-	double znc[3];
-	znc[i] = 0.0;
-	znc[perm[2*i]] = z(perm[2*i+1]);
-	znc[perm[2*i+1]] = -z(perm[2*i]);
-	if (znc[0] == 0.0 && znc[1] == 0.0 && znc[2] == 0.0) {
-		// Only one coordinate was non-zero
-		znc[perm[2*i]] = 1.0;
-		znc[perm[2*i+1]] = 0.0;
-	}
-
-	Vector zn[2];
-	zn[0] = Vector(znc[0], znc[1], znc[2]);
-	zn[1] = z.cross(zn[0]);
-
-	// Check straddles - now very similar to the simple case above
-	for (i = 0; i < 2; i++) {
-		auto il = {zn[i].dot(tv[0]), zn[i].dot(tv[1]), zn[i].dot(tv[2])};
-		double ptn = zn[i].dot(pt);
-		if (ptn < std::min<double>(il) || ptn > std::max<double>(il)) break;
-	}
-	if (i < 2) return false;
-
-	return pt_triangle2(pt, tv, z, hitVertices, ptr);
+static bool pt_triangle(const Vector& pt, const Vector* tv, const Vector& dir,
+						meshing::PtSet& hitVertices, Vector *pz) {
+	return Meshing<MeshInstance>::pt_triangle(pt, tv, dir, hitVertices, pz);
 }
 
-
-#ifdef DELETED
-bool MeshInstance::pt_is_internal(const Vector& pt) const {
-// Alas, the simple algorithm deleted below does not work for meshes - the
-// fix would require finding the nearest point on the triangle plane, then
-// the nearest point to that on each triangle side.  The resulting effort
-// is similar to that of the replacement algorithm but less easily made
-// as efficient.
-    // if the point is outside of the maximum radius then it cannot be
-    // inside the mesh instance
-    if ((pt - xyz_offset).length() >= radius) return false;
-
-static bool warn = true;
-if (warn) {
-std::cerr << "MeshInstance::pt_is_internal Octree::get_nearest still being used, but is unreliable!" << std::endl;
-warn = false;
-}
-    // ok so it's within the maximum radius, still not necessarily
-    // internal -- find the nearest node patch and compare this 
-    // point to the normal vector of the patch
-    const BasicNodePatch& nearest_np = mesh_tree->get_nearest(pt);
-    if ((pt - nearest_np).dot(nearest_np.get_normal()) > 0) return false;
-
-    // if get here then the above test must indicate that the point
-    // is on the internal side of the nearest node patch and is 
-    // therefore internal to the mesh instance.
-    return true;
-}
-#else
-MeshInstance::pt_set MeshInstance::pt_hitVertices;
 bool MeshInstance::pt_is_internal(const Vector& pt,
-								MeshInstance::pt_set& hitVertices) const
-{
-    // if the point is outside of the maximum radius then it cannot be
-    // inside the mesh instance
-    if ((pt - xyz_offset).length() >= radius) return false;
-
-	// Find the triangles for this mesh and
-	// count number of times a z-line from pt crosses a mesh triangle
-	Vector tv[3];	// Triangle - copies because const pointers are a mess
-	int cc = 0;	// crossings count
-	const int zdir = 2*(pt.z - xyz_offset.z > 0.0)-1;	// z-direction to use
-	hitVertices.clear();	// See interface to pt_triangle above
-	std::vector<std::shared_ptr<Triangle>>& triangles
-		= mesh_ptr->get_triangle_ptrs();
-	unsigned int npatches = patches.size();
-    for (std::vector<std::shared_ptr<Triangle>>::const_iterator
-			it = triangles.cbegin(), end = triangles.cend();
-		 it != end; ++it)
-    {
-		const Triangle& t = **it;
-		unsigned int vi[] = {t.get_v1_idx(), t.get_v2_idx(), t.get_v3_idx()};
-		assert(vi[0] < npatches && vi[1] < npatches && vi[2] < npatches);
-		// This relies on vertices and patches having the same order...
-		for (int i = 0; i < 3; i++) tv[i] = patches[vi[i]]->get_node();
-
-		// Does z-line does cross the mesh at this triangle?
-		cc += pt_triangle(pt, tv, zdir, hitVertices);
-	}  // each triangle in mesh
-	return ((cc%2) == 1);  // pt is internal if odd number of crossings
+		meshing::PtSet& hitVertices, const Vector* dir, Vector* nearest) const {
+	return Meshing<MeshInstance>::pt_is_internal(*this, pt, hitVertices,
+												 dir, nearest);
 }
-#endif  // DELETED
 
 double MeshInstance::get_potential_at_internal_pt(const Vector& pt) const
 {
@@ -492,20 +247,27 @@ static auto toofar = [](Vector& v, double lim) noexcept -> bool {
 };
 
 static constexpr double EINT{10000};	// Internal point cost: max energy/area
-static constexpr double P5olim{14.75};		// HE P5 Outer limit
-static constexpr double P5ilim{9.84356};	// HE P5 Inner limit
+static constexpr double P5olim{8.55};		// HE P5 Outer limit
+//#define P5POLY
+#ifdef P5POLY
+static constexpr double P5ilim{3.64356};	// HE P5 Inner limit
+#else
+static constexpr double P5mlim{6.8};		// HE P5 Middle limit
+static constexpr double P5ilim{4.3};		// HE P5 Inner limit
+#endif
 static constexpr double LJolim{2.5};		// LJ Outer limit
 static constexpr double LJilim{2.3};		// LJ Inner limit
-static constexpr double ELIM{std::max<double>(P5olim, LJolim)};	// Combined 
+static constexpr double ELIM{std::max<double>(P5olim, 3.4*LJolim)};	//sigma<3.4 
 
 // Useful debug tools
 static std::mutex dbgmx;
 #define COUT { std::lock_guard<std::mutex> dbglk(dbgmx); std::cout
 #define ENDL std::endl; }
 
-// Returns negative if other not in range of mine under P5 (hydrophobic effect)
+// Returns false if other not in range of mine under P5 (hydrophobic effect)
 static bool P5range(const BasicNodePatch& mine, const BasicNodePatch& other) {
 //COUT << "MeshInstance::P5 range in " << ENDL
+
 	// No point doing anything if the hydrophobicity isn't right
 	if (mine.hydrophobicity >= 0) return false;
 	// positive values should have an effect through longer-range smoothing...
@@ -529,9 +291,16 @@ static bool P5range(const BasicNodePatch& mine, const BasicNodePatch& other) {
 
 // Returns the P5 (hydrophobic "energy") for distance r and given hydrophobicity
 static double P5(double r, double hydro) {
-	constexpr double l[] = {-0.191554, 0.0197538};	// Linear coefficients
-	constexpr double q[] = {-59.02945, 24.11215, -3.918994, 0.3168319,
-							-0.01274038, 0.0002038462}; // Quintic coeffs
+#ifdef P5POLY
+	constexpr double l[] = {-0.1381608, 0.0395076 }; // Linear coefficients
+	constexpr double q[] = {-3.256875, 2.82834, -0.957078, 0.158458,
+							-0.0128423, 0.0004076924}; // Quintic coeffs
+#else
+	constexpr double l[] = {-0.4144824, 0.1185228 }; // Linear coefficients
+	constexpr double qm[] = {0.0245255, -4.0755e-3};  // Quadratic-middle coeffs
+	constexpr double qo[] = {0.0261969, -3.0642e-3};  // Quadratic-outer coeffs
+#endif
+
 	// Return value
 	double e = 0.0;
 
@@ -541,8 +310,15 @@ static double P5(double r, double hydro) {
 		//if (r < 0.0) r = 0.0;  // overlaps reduce volume but treat as contact
 		e = l[1]*r + l[0];
 	}
+#ifdef P5POLY
 	else // (P5ilim < r < P5olim)
 		e = ((((q[5]*r + q[4])*r + q[3])*r + q[2])*r + q[1])*r + q[0];
+#else
+	else if (r <= P5mlim)
+		e = (qm[1]*r + qm[0])*r;
+	else // P5mlim < r < P5olim
+		e = (qo[1]*r + qo[0])*r;
+#endif
 
 	// Adjust by strength of hydrophobicity - may have been smoothed here
 	if (hydro != -0.5) e *= (-2)*hydro;
@@ -557,6 +333,7 @@ static bool LJrange(const Charge& mine, const Charge& other) {
 
 	// Cheap range checks
 	Vector v = mine - other;
+
 	if (toofar(v, LJolim*other.sigma)) return false;
 
 	// In this case it is more efficient to check the outer limit exactly
@@ -568,8 +345,10 @@ static bool LJrange(const Charge& mine, const Charge& other) {
 }
 
 static double LJ(double r, double sigma, double epsilon) {
-	constexpr double m[] = {3136.5686, -68.069, -0.0833111261, 0.746882273};
-	constexpr double k = 0.0163169237;
+	//constexpr double m[] = {3136.5686, -68.069, -0.0833111261, 0.746882273};
+	//constexpr double k = 0.0163169237;
+	constexpr double m[] = {1568.2843, -34.0345, -0.041655563, 0.373441136};
+	constexpr double k = 0.0081584618;
 
 //COUT << "MeshInstance::LJ in " << r << " " << sigma << " " << epsilon << ENDL
 	// Check limits
@@ -586,7 +365,7 @@ static double LJ(double r, double sigma, double epsilon) {
 	if (r > LJilim*sigma)	// (LJilim < r < LJolim)
 		e = (m[0]*sr12 + m[1]*sr6 + m[2]/sr2 + m[3]) * epsilon;
 	else // (0.0 < r <= LJilim sigma)
-		e = (4 * (sr12 - sr6) + k) * epsilon;
+		e = (2 * (sr12 - sr6) + k) * epsilon;
 	if (e > EINT) e = EINT;
 
 //COUT << "MeshInstance::LJ out " << e << ENDL
@@ -672,7 +451,7 @@ struct CBE_thread {
 
 	// Queue a work list
 	using cbeFn = std::function< void(
-		BasicNodePatch&, std::vector<unsigned int>&, MeshInstance::pt_set&) >;
+		BasicNodePatch&, std::vector<unsigned int>&, meshing::PtSet&) >;
 	using cbeTpl = std::tuple<cbeFn, PatchList::iterator, PatchList::iterator>;
 	//static void push(const cbeTpl& work_item) {	// no std::forward<T> below
 	static void push(cbeTpl&& work_item) {
@@ -710,7 +489,7 @@ private:
 
 	// Tracking objects
 	// This could be generalised by templating
-	MeshInstance::pt_set hitVertices;
+	meshing::PtSet hitVertices;
 	std::vector<unsigned int> trk;
 
 	// Main processing
@@ -776,18 +555,11 @@ std::mutex CBE_thread::lkq;
 std::condition_variable CBE_thread::cv;
 std::atomic<bool> CBE_thread::stopping, CBE_thread::halting;
 
-template <typename T> struct hashFn{
-	size_t operator()(T v) const{ return boost::hash_value(v); }
-};
-template <typename T> struct eqFn {
-	bool operator()(T lhs, T rhs) const{ return (lhs == rhs); }
-};
-
 void MeshInstance::calculate_boundary_energy(
 	BasicNodePatch& np,						// The patch to calculate for
 	const MeshInstance& omi,				// The impinging MeshInstance
 	std::vector<unsigned int>& track,		// To avoid repeat omi points
-	MeshInstance::pt_set& hitVertices)		// To avoid repeat vertex hits
+	meshing::PtSet& hitVertices)			// To avoid repeat vertex hits
 {
 	// Calculate the energies for np resulting from omi
 	// Reset the energies
@@ -817,12 +589,20 @@ void MeshInstance::calculate_boundary_energy(
 	// Set up the unordered sets used to hold vertices, triangles and charges
 	// These should be quite small, so can be set up for each call
 	using uint = unsigned int;
-	using idxSet = std::unordered_set<uint, hashFn<uint>, eqFn<uint>>;
+	using idxSet = std::unordered_set<uint>;
 	idxSet vertexSet;
-	using idxMap = std::unordered_map<uint, bool, hashFn<uint>, eqFn<uint>>;
+	using idxMap = std::unordered_map<uint, bool>;
 	idxMap chargeMap;
 	using trio = std::array<uint,3>;
-	using idxTri = std::unordered_set<trio, hashFn<trio>, eqFn<trio>>;
+	struct hashFnTrio {
+		size_t operator()(const trio& v) const{ return boost::hash_value(v); }
+	};
+	struct eqFnTrio  {
+		bool operator()(const trio& lhs, const trio& rhs) const
+		{ return (lhs == rhs); }
+	};
+	
+	using idxTri = std::unordered_set<trio, hashFnTrio, eqFnTrio>;
 	idxTri triangleSet;
 
 	// Loop over all omi triangles checking potential ranges whilst
@@ -929,9 +709,9 @@ void MeshInstance::calculate_boundary_energy(
 				hitVertices.clear();
 				if (omi.pt_is_internal(*mych, hitVertices)) {
 					// Bad news - EINT and halt all other processing
-					CBE_thread::halt();
+					//CBE_thread::halt();	// Continue to probe HE energy
+					//np.he = 0.0;	// almost certainly unnecessary
 					np.lj = EINT;
-					np.he = 0.0;	// almost certainly unnecessary
 					std::cout << "LJ collision detected between mesh instances "
 							  << instance_id << " and "
 							  << omi.instance_id << std::endl;

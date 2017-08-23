@@ -63,9 +63,24 @@ public:
 	}
 	fs::path get_fh_filename() const { return prepend_work_dir(fh_filename); }
 	fs::path get_ecm_filename() const { return prepend_work_dir(ecm_filename); }
-
+#ifndef PREVOLHE
+	// Optional elements
+    fs::path get_mesh2_filename() const {
+		return get_opt_filename(mesh2_filename);
+	}
+    fs::path get_energies2_filename() const {
+		return get_opt_filename(energies2_filename);
+	}
+#endif // PREVOLHE
 
 private:
+#ifndef PREVOLHE
+    fs::path get_opt_filename(const fs::path& fn) const {
+		if (fn.empty()) return fn;
+		return prepend_work_dir(fn.string());
+	}
+#endif // PREVOLHE
+
     inline fs::path prepend_work_dir(const std::string& filename) const;
 
     void init();
@@ -93,6 +108,10 @@ private:
     static const std::string TENSOR_TAG; // unused
     static const std::string ELLIPSOID_TAG; // unused
     static const std::string ECM_TAG;
+#ifndef PREVOLHE
+    static const std::string MESH2_TAG;
+    static const std::string ENERGIES2_TAG;
+#endif // PREVOLHE
 
     // internal storage of the filenames we find
     std::string pdb_filename;
@@ -106,6 +125,10 @@ private:
     std::string diff_tensor_filename;
     std::string ellipsoid_filename;
     std::string ecm_filename;
+#ifndef PREVOLHE
+    std::string mesh2_filename;
+    std::string energies2_filename;
+#endif // PREVOLHE
 };
 
 // inlined methods

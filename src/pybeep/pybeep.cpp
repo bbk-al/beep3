@@ -328,7 +328,7 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def("vertex", &Vertex::get_vertex, return_value_policy<reference_existing_object>())
         .def("normal", &Vertex::get_normal, return_value_policy<reference_existing_object>());
 
-    class_<Mesh>("_Mesh", init<const std::string&, const std::string&, bool>())
+    class_<Mesh>("_Mesh", init<const std::string&, const std::string&, bool, bool, bool>())
         .def(init<const std::string&>())
         .def(init<const Mesh&>())
         .def(init<>())
@@ -355,7 +355,10 @@ BOOST_PYTHON_MODULE(libBEEP)
         .def("calculate_energy", 
 			static_cast<double (Mesh::*)(double, double, double) const>
 				(&Mesh::calculate_energy))
+		.def("create_mesh2", &Mesh::create_mesh2, return_value_policy<reference_existing_object>())
+		.def("write_mesh", &Mesh::write_mesh)
         .def("kinemage_node_patches", &Mesh::kinemage_node_patches)
+        .def("kinemage_meshing", &Mesh::kinemage_meshing)
         .def("set_quad_points_per_triangle", &Mesh::set_quad_points_per_triangle)
         .def("set_qual_points_per_triangle", &Mesh::set_qual_points_per_triangle);
 ;

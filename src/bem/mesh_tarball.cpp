@@ -43,6 +43,10 @@ const std::string MeshTarball::TENSOR_TAG = "diffusion_tensor";
 const std::string MeshTarball::CENTRE_TAG = "centre";
 const std::string MeshTarball::ELLIPSOID_TAG = "ellipsoid";
 const std::string MeshTarball::ECM_TAG = "ecm";
+#ifndef PREVOLHE
+const std::string MeshTarball::MESH2_TAG = "mesh2";
+const std::string MeshTarball::ENERGIES2_TAG = "energies2";
+#endif // PREVOLHE
 
 
 void MeshTarball::init() {
@@ -248,7 +252,6 @@ void MeshTarball::parse_definition_xml()
 									&vertex_normal_filename, false) );
     key_val_defs.push_back( triplet(&MESH_TAG, &mesh_filename, true) );
     key_val_defs.push_back( triplet(&ENERGIES_TAG, &energies_filename, true) );
-    key_val_defs.push_back( triplet(&MESH_TAG, &mesh_filename, true) );
     key_val_defs.push_back( triplet(&FH_TAG, &fh_filename, false) );
     key_val_defs.push_back( triplet(&TENSOR_TAG, &diff_tensor_filename, false)
 						  );
@@ -256,6 +259,10 @@ void MeshTarball::parse_definition_xml()
     key_val_defs.push_back( triplet(&ELLIPSOID_TAG, &ellipsoid_filename, false)
 						  );
     key_val_defs.push_back( triplet(&ECM_TAG, &ecm_filename, false) );
+#ifndef PREVOLHE
+    key_val_defs.push_back( triplet(&MESH2_TAG, &mesh2_filename, false) );
+    key_val_defs.push_back( triplet(&ENERGIES2_TAG, &energies2_filename, false) );
+#endif // PREVOLHE
 
     // iterate over this list of allowable key/vals and fill in the struct
     for (std::vector<triplet>::iterator

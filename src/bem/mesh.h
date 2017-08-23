@@ -20,6 +20,7 @@
 #include <boost/shared_array.hpp>
 
 #include <unordered_map>
+#include <unordered_set>
 #include "../common/math_vector.h"
 #include "bem_kernels.h"
 #include "node_patch.h"
@@ -34,6 +35,8 @@
 #include "png1.h"
 #include <fstream>
 #include "mesh_tarball.h"
+#include "meshing.h"
+#include <boost/functional/hash.hpp>
 
 #ifdef __CHARMC__
 #include <pup_stl.h>
@@ -44,6 +47,26 @@ namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
 class Mesh {
 
 public:
+	using Uint = unsigned int;
+
+	template <typename T>
+	using List = std::vector<T>;	// Convenience and in case vector --> ???
+
+	template<Uint N>
+	using Multiplet = std::array<Uint,N>;
+
+	template <Uint N>
+	using IdxListN = List<Multiplet<N>>;
+
+	template <typename T> struct hashFn{
+		size_t operator()(T v) const{ return boost::hash_value(v); }
+	};
+	template <typename T> struct eqFn {
+		bool operator()(T lhs, T rhs) const{ return (lhs == rhs); }
+	};
+	template<Uint N, typename T = Uint>
+	using IdxMapN = std::unordered_map<
+				Multiplet<N>, T, hashFn<Multiplet<N>>, eqFn<Multiplet<N>> >;
 
 	//! Default constructor
 	Mesh() :
@@ -67,7 +90,21 @@ public:
 	//! Constructor from separate mesh and xyzq files
 	Mesh(const std::string& mesh_filename,
 	     const std::string& xyzq_filename,
+#ifdef PREVOLHE
 	     bool force_planar=false);
+#else
+	     bool force_planar=false,
+	     bool skip_hydro=false,
+		 bool skip_precalcs=false);
+
+	//! Constructor for secondary mesh
+	Mesh(const Mesh& m,						//!\param parent mesh
+		const std::vector<Vertex>& vertex_list,	//!\param in
+		const IdxListN<2>& edge_list,		//!\param in
+		const IdxListN<3>& triangle_list,	//!\param in
+		bool force_planar = false,			//!\param in
+		bool skip_precalcs = true);			//!\param in
+#endif // PREVOLHE
 
 	//! Copy constructor
 	Mesh(const Mesh& other);
@@ -202,7 +239,8 @@ public:
 
     void calculate_vertex_normals();
 
-    std::string kinemage_node_patches() const;
+    std::string kinemage_node_patches(void) const;
+	std::string kinemage_meshing(void) const;
     std::string kinemage_fh_vals
 		(double fscale, double hscale, int num_colours) const;
 
@@ -273,13 +311,40 @@ public:
     double calculate_volume() const;
 //TODO NB this should go back to being private, but add in reset_ if needed
     void init_energy_precalcs();
+#ifndef PREHYDROPHOBIC
+	void init_other_energies(void);
+#endif // PREHYDROPHOBIC
+
+#ifndef PREVOLHE
+	// Get triangle from three vertex indices
+	const Triangle* find_triangle(Uint v1, Uint v2, Uint v3) const;
+	// Fast counts
+	const Uint edge_count(Multiplet<2> ea) const { return e2tMap.count(ea); };
+	const Uint face_count(Multiplet<3> fa) const { return v2tMap.count(fa); };
+
+	// Create and write HE mesh
+	Mesh& create_mesh2(const Mesh& mp, bool force_planar);
+	void write_mesh(const std::string& m) const;
+
+	// Needed here for beep/generalized_born...
+	//! Create triangles from a list of vertex indices for edges and triangles
+	void create_triangles_from_vertices(
+		const IdxListN<2>& edge_list, //!\param in, vert index pairs, low-high
+		const IdxListN<3>& triangle_list); //!\param in, 3 vert idx anti-clock
+#endif // PREVOLHE
 
 private:
 
     // init a Mesh object from tarball filename
+#ifdef PREVOLHE
     void init(const std::string&, bool force_planar=false);
+#else
+    void init(const std::string&, bool force_planar = false,
+				bool skip_hydro = false, bool skip_precalcs = false);
+#endif // PREVOLHE
 
     void init_mesh(const fs::path& mesh_filename);
+	void init_mesh(void);
     void init_charges(const fs::path& xyzq_filename);
     void init_fh_vals(const fs::path& fh_filename);
     void init_centre(const fs::path& centre_filename);
@@ -288,6 +353,12 @@ private:
     void renormalise_energy_precalcs();
 
     double calculate_radius();
+
+#ifndef PREVOLHE
+	template <Uint N, typename T = Uint>
+	using IdxPOMapN = std::unordered_multimap< Multiplet<N>, T,
+									hashFn<Multiplet<N>>, eqFn<Multiplet<N>> >;
+#endif // PREVOLHE
 
     Vector centre;
 
@@ -330,6 +401,17 @@ private:
 	// Need to maintain number of node patches per charge for LJ calculation
 	std::vector<unsigned int> nppc;
 #endif  // PREHYDROPHOBIC
+#ifndef PREVOLHE
+	// for fast look up of triangle id from vertex indices
+	IdxMapN<3> v2tMap;
+	IdxPOMapN<2> e2tMap;
+	static std::function<Multiplet<2>(std::pair<Uint,Uint>&&)> parr;
+
+	// HE mesh
+	std::shared_ptr<Mesh> mesh2;	// shared to allow independent existence?
+	std::unique_ptr<Meshing<Mesh>> meshing;	// needed for kinemage only, with...
+	std::vector<unsigned int> source;		// source for faces of mesh2
+#endif // PREVOLHE
 
     double total_planar_area;
     double total_bezier_area;

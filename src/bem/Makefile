@@ -45,7 +45,9 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/acx_pthread.m4 \
 	$(top_srcdir)/m4/ax_check_cl.m4 \
 	$(top_srcdir)/m4/ax_lang_compiler_ms.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
+	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
+	$(top_srcdir)/m4/lt~obsolete.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -57,8 +59,8 @@ libbem_la_DEPENDENCIES = ../fmm/libfmm.la \
 	../external/tinyxml/libtinyxml.la \
 	../opencl/libopencl_handler.la
 am_libbem_la_OBJECTS = bem_kernels.lo config_file.lo mesh.lo \
-	mesh_instance.lo mesh_tarball.lo node_patch.lo spharm.lo \
-	triangle.lo vertex.lo opencl_bem.lo
+	meshing.lo mesh_instance.lo mesh_tarball.lo node_patch.lo \
+	spharm.lo triangle.lo vertex.lo opencl_bem.lo
 libbem_la_OBJECTS = $(am_libbem_la_OBJECTS)
 libbem_la_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
@@ -67,7 +69,7 @@ libbem_charmc_la_DEPENDENCIES = ../fmm/libfmm.la \
 	../external/tinyxml/libtinyxml.la
 am_libbem_charmc_la_OBJECTS = libbem_charmc_la-bem_kernels.lo \
 	libbem_charmc_la-config_file.lo libbem_charmc_la-mesh.lo \
-	libbem_charmc_la-mesh_instance.lo \
+	libbem_charmc_la-meshing.lo libbem_charmc_la-mesh_instance.lo \
 	libbem_charmc_la-mesh_tarball.lo \
 	libbem_charmc_la-node_patch.lo libbem_charmc_la-spharm.lo \
 	libbem_charmc_la-triangle.lo libbem_charmc_la-vertex.lo \
@@ -122,6 +124,7 @@ CXXFLAGS = -g -O2
 CYGPATH_W = echo
 DEFS = -DHAVE_CONFIG_H $(am__append_1)
 DEPDIR = .deps
+DLLTOOL = false
 DSYMUTIL = 
 DUMPBIN = 
 ECHO_C = 
@@ -144,7 +147,9 @@ LIBTOOL = $(SHELL) $(top_builddir)/libtool
 LIPO = 
 LN_S = ln -s
 LTLIBOBJS = 
+LT_SYS_LIBRARY_PATH = 
 MAKEINFO = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.2/missing --run makeinfo
+MANIFEST_TOOL = :
 MKDIR_P = /bin/mkdir -p
 NM = /usr/bin/nm -B
 NMEDIT = 
@@ -173,6 +178,7 @@ abs_builddir = /d/mw6/u/la002/pjt/src/beep-0.2/src/bem
 abs_srcdir = /d/mw6/u/la002/pjt/src/beep-0.2/src/bem
 abs_top_builddir = /d/mw6/u/la002/pjt/src/beep-0.2
 abs_top_srcdir = /d/mw6/u/la002/pjt/src/beep-0.2
+ac_ct_AR = ar
 ac_ct_CC = gcc
 ac_ct_CXX = g++
 ac_ct_DUMPBIN = 
@@ -207,7 +213,6 @@ libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
 localstatedir = ${prefix}/var
-lt_ECHO = echo
 mandir = ${datarootdir}/man
 mkdir_p = /bin/mkdir -p
 oldincludedir = /usr/include
@@ -227,6 +232,7 @@ noinst_LTLIBRARIES = libbem.la $(am__append_2)
 libbem_charmc_la_SOURCES = bem_kernels.cpp \
 		config_file.cpp \
 		mesh.cpp \
+		meshing.cpp \
 		mesh_instance.cpp \
 		mesh_tarball.cpp \
 		node_patch.cpp \
@@ -243,6 +249,7 @@ libbem_charmc_la_SOURCES = bem_kernels.cpp \
 		edge.h \
 		local_integrations.h \
 		mesh.h \
+		meshing.h \
 		mesh_instance.h \
 		mesh_tarball.h \
 		node_patch.h \
@@ -261,6 +268,7 @@ libbem_charmc_la_LIBADD = ../fmm/libfmm.la ../external/tinyxml/libtinyxml.la -lg
 libbem_la_SOURCES = bem_kernels.cpp \
 		config_file.cpp \
 		mesh.cpp \
+		meshing.cpp \
 		mesh_instance.cpp \
 		mesh_tarball.cpp \
 		node_patch.cpp \
@@ -277,6 +285,7 @@ libbem_la_SOURCES = bem_kernels.cpp \
 		edge.h \
 		local_integrations.h \
 		mesh.h \
+		meshing.h \
 		mesh_instance.h \
 		mesh_tarball.h \
 		node_patch.h \
@@ -354,6 +363,7 @@ include ./$(DEPDIR)/libbem_charmc_la-config_file.Plo
 include ./$(DEPDIR)/libbem_charmc_la-mesh.Plo
 include ./$(DEPDIR)/libbem_charmc_la-mesh_instance.Plo
 include ./$(DEPDIR)/libbem_charmc_la-mesh_tarball.Plo
+include ./$(DEPDIR)/libbem_charmc_la-meshing.Plo
 include ./$(DEPDIR)/libbem_charmc_la-node_patch.Plo
 include ./$(DEPDIR)/libbem_charmc_la-opencl_bem.Plo
 include ./$(DEPDIR)/libbem_charmc_la-spharm.Plo
@@ -362,6 +372,7 @@ include ./$(DEPDIR)/libbem_charmc_la-vertex.Plo
 include ./$(DEPDIR)/mesh.Plo
 include ./$(DEPDIR)/mesh_instance.Plo
 include ./$(DEPDIR)/mesh_tarball.Plo
+include ./$(DEPDIR)/meshing.Plo
 include ./$(DEPDIR)/node_patch.Plo
 include ./$(DEPDIR)/opencl_bem.Plo
 include ./$(DEPDIR)/spharm.Plo
@@ -369,22 +380,25 @@ include ./$(DEPDIR)/triangle.Plo
 include ./$(DEPDIR)/vertex.Plo
 
 .cpp.o:
-	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
+	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Po
 #	source='$<' object='$@' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(CXXCOMPILE) -c -o $@ $<
 
 .cpp.obj:
-	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ `$(CYGPATH_W) '$<'`
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.obj$$||'`;\
+	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ `$(CYGPATH_W) '$<'` &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Po
 #	source='$<' object='$@' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(CXXCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
 
 .cpp.lo:
-	$(LTCXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Plo
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.lo$$||'`;\
+	$(LTCXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Plo
 #	source='$<' object='$@' libtool=yes \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(LTCXXCOMPILE) -c -o $@ $<
@@ -409,6 +423,13 @@ libbem_charmc_la-mesh.lo: mesh.cpp
 #	source='mesh.cpp' object='libbem_charmc_la-mesh.lo' libtool=yes \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libbem_charmc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libbem_charmc_la-mesh.lo `test -f 'mesh.cpp' || echo '$(srcdir)/'`mesh.cpp
+
+libbem_charmc_la-meshing.lo: meshing.cpp
+	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libbem_charmc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libbem_charmc_la-meshing.lo -MD -MP -MF $(DEPDIR)/libbem_charmc_la-meshing.Tpo -c -o libbem_charmc_la-meshing.lo `test -f 'meshing.cpp' || echo '$(srcdir)/'`meshing.cpp
+	$(am__mv) $(DEPDIR)/libbem_charmc_la-meshing.Tpo $(DEPDIR)/libbem_charmc_la-meshing.Plo
+#	source='meshing.cpp' object='libbem_charmc_la-meshing.lo' libtool=yes \
+#	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
+#	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libbem_charmc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libbem_charmc_la-meshing.lo `test -f 'meshing.cpp' || echo '$(srcdir)/'`meshing.cpp
 
 libbem_charmc_la-mesh_instance.lo: mesh_instance.cpp
 	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libbem_charmc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libbem_charmc_la-mesh_instance.lo -MD -MP -MF $(DEPDIR)/libbem_charmc_la-mesh_instance.Tpo -c -o libbem_charmc_la-mesh_instance.lo `test -f 'mesh_instance.cpp' || echo '$(srcdir)/'`mesh_instance.cpp
@@ -662,6 +683,7 @@ uninstall-am:
 	mostlyclean-compile mostlyclean-generic mostlyclean-libtool \
 	pdf pdf-am ps ps-am tags uninstall uninstall-am
 
+#AM_CXXFLAGS = -std=c++1z
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

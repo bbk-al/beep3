@@ -17,6 +17,7 @@
 #define MESH_INSTANCE_H_
 
 #include "mesh.h"
+#include "meshing.h"
 #include "node_patch.h"
 #include "../common/math_vector.h"
 #include <boost/shared_ptr.hpp>
@@ -134,14 +135,14 @@ public:
 			return (lhs.x == rhs.x) && (lhs.y == rhs.y) && (lhs.z == rhs.z);
 		}
 	};
-	using pt_set = std::unordered_set<Vector, hashFunc, equalsFunc>;
-	// Default map of hit vertices - must be reset by caller of pt_triangle
-	static pt_set pt_hitVertices;
 
 	// booleans
     bool isSilent() const { return silent; }
-    bool pt_is_internal(const Vector& pt,
-					pt_set& hitVertices = MeshInstance::pt_hitVertices) const;
+    bool pt_is_internal(
+		const Vector& pt,
+		meshing::PtSet& hitVertices = Meshing<MeshInstance>::pt_hitVertices,
+		const Vector* dir = nullptr, Vector* nearest = nullptr
+	) const;
 
 	// get - other
     inline Vector get_h_squared() const;
@@ -263,7 +264,8 @@ private:
 		BasicNodePatch& np,			//!\param The patch to calculate for
 		const MeshInstance& omi,	//!\param The impinging MeshInstance
 		std::vector<unsigned int>& track,	//!\param omi.patches.size(), all 0
-		pt_set& hitVertices = pt_hitVertices); //!\param Detect vertex repeats
+		meshing::PtSet& hitVertices //!\param Detect vertex repeats
+			= Meshing<MeshInstance>::pt_hitVertices);
 #endif // PREHYDROPHOBIC
 
 	// Attributes

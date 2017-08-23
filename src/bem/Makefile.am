@@ -8,6 +8,7 @@ endif
 libbem_charmc_la_SOURCES = bem_kernels.cpp \
 		config_file.cpp \
 		mesh.cpp \
+		meshing.cpp \
 		mesh_instance.cpp \
 		mesh_tarball.cpp \
 		node_patch.cpp \
@@ -24,6 +25,7 @@ libbem_charmc_la_SOURCES = bem_kernels.cpp \
 		edge.h \
 		local_integrations.h \
 		mesh.h \
+		meshing.h \
 		mesh_instance.h \
 		mesh_tarball.h \
 		node_patch.h \
@@ -43,6 +45,7 @@ libbem_charmc_la_LIBADD = ../fmm/libfmm.la ../external/tinyxml/libtinyxml.la -lg
 libbem_la_SOURCES = bem_kernels.cpp \
 		config_file.cpp \
 		mesh.cpp \
+		meshing.cpp \
 		mesh_instance.cpp \
 		mesh_tarball.cpp \
 		node_patch.cpp \
@@ -59,6 +62,7 @@ libbem_la_SOURCES = bem_kernels.cpp \
 		edge.h \
 		local_integrations.h \
 		mesh.h \
+		meshing.h \
 		mesh_instance.h \
 		mesh_tarball.h \
 		node_patch.h \

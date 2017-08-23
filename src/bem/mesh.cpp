@@ -6,6 +6,7 @@
 
 #include "../common/math_vector.h"
 #include "mesh.h"
+#include "meshing.h"
 #include "bem_kernels.h"
 #include <gsl/gsl_linalg.h>
 #include "../fmm/fmm_octree.h"
@@ -19,8 +20,10 @@
 #include "constants.h"
 #include "gts_utils.h"
 #include "off_utils.h"
+#include <unordered_map>
 #include <boost/scoped_ptr.hpp>
 #include <boost/functional/hash.hpp>
+#include <boost/range/combine.hpp>
 
 namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
 
@@ -67,8 +70,15 @@ Mesh::~Mesh() {
 
 Mesh::Mesh(const std::string& mesh_filename,
            const std::string& xyzqr_filename,
+#ifdef PREVOLHE
            bool force_planar
 		  ) : done_energy_precalcs(false)		
+#else
+           bool force_planar,
+		   bool skip_hydro,
+		   bool skip_precalcs
+		  ) : done_energy_precalcs(skip_precalcs)
+#endif // PREVOLHE
 {
 	fs::path mesh_path{mesh_filename};
     init_mesh(mesh_path);
@@ -92,11 +102,27 @@ Mesh::Mesh(const std::string& mesh_filename,
     // set maximum radius of any surface point from the centre
     radius = calculate_radius();
 
-    init_energy_precalcs();
+#ifndef PREVOLHE
+	// Assign hydrophobicities and LJ parameters
+	if (!skip_hydro)
+#endif // PREVOLHE
+#ifndef PREHYDROPHOBIC
+		init_other_energies();
+#endif // PREHYDROPHOBIC
+
+#ifndef PREVOLHE
+	// Assign electrostatic coefficients, if needed
+	if (!skip_precalcs)
+#endif // PREVOLHE
+		init_energy_precalcs();
 }
 
 void Mesh::init(const std::string& mesh_filename,
+#ifdef PREVOLHE
                 bool force_planar)
+#else
+                bool force_planar, bool skip_hydro, bool skip_precalcs)
+#endif // PREVOLHE
 {
     // decompress the mesh tarball to temp folder
     try {
@@ -104,12 +130,25 @@ void Mesh::init(const std::string& mesh_filename,
 
         // get the paths of the extracted files
         fs::path mesh_filename = mesh_tar.get_mesh_filename();
+#ifndef PREVOLHE
+        fs::path mesh2_filename = mesh_tar.get_mesh2_filename();
+#endif // PREVOLHE
         fs::path xyzqr_filename = mesh_tar.get_xyzqr_filename();
         fs::path centre_filename = mesh_tar.get_centre_filename();
         fs::path energies_filename = mesh_tar.get_energies_filename();
+#ifndef PREVOLHE
+        fs::path energies2_filename = mesh_tar.get_energies2_filename();
+#endif // PREVOLHE
 
         // init the mesh using the pre-calculated files (nodes and quads etc.)
         init_mesh(mesh_filename);
+#ifndef PREVOLHE
+		if (!mesh2_filename.empty()) {
+			mesh2 = std::make_shared<Mesh>(mesh2_filename.string(),
+							xyzqr_filename.string(), force_planar, true, true);
+            mesh2->read_energy_precalcs(energies2_filename);    
+		}
+#endif // PREVOLHE
         init_charges(xyzqr_filename);
         init_centre(centre_filename);
 
@@ -124,7 +163,10 @@ void Mesh::init(const std::string& mesh_filename,
 	
     	// read energy precalcs from data file
         if (force_planar) {
-             init_energy_precalcs();
+#ifndef PREHYDROPHOBIC
+			init_other_energies();
+#endif // PREHYDROPHOBIC
+            init_energy_precalcs();
         }
         else {
             read_energy_precalcs(energies_filename);    
@@ -163,6 +205,50 @@ void Mesh::init(const std::string& mesh_filename,
 //	fout << buf.str();
 //	fout.close();
 }
+
+#ifndef PREVOLHE
+Mesh::Mesh(const Mesh& m, const std::vector<Vertex>& vertex_list, 
+		const IdxListN<2>& edge_list, const IdxListN<3>& triangle_list,
+		bool force_planar, bool skip_precalcs)
+{
+	// Copy the parent charge information
+    charges.reserve(m.charges.size());
+    charges.insert(charges.end(), m.charges.begin(), m.charges.end());
+#ifndef PREHYDROPHOBIC
+    allCharges.insert(allCharges.end(),
+					  m.allCharges.begin(), m.allCharges.end());
+    allChargesMap.insert(m.allChargesMap.cbegin(), m.allChargesMap.cend());
+#endif // PREHYDROPHOBIC
+    net_charge = m.net_charge;
+    centre = m.centre;  // charges centre
+
+	// Set the vertices
+    vertices.reserve(vertex_list.size());
+	for (const auto& v: vertex_list) vertices.push_back(v);
+
+	// Create the triangles
+    triangles.reserve(triangle_list.size());
+	create_triangles_from_vertices(edge_list, triangle_list);
+
+	// Create the bezier triangles
+	if (force_planar)
+		create_bezier_triangles<Triangle>();
+	else
+		create_bezier_triangles<PNG1_Triangle>();
+
+	// Create the node patches
+	create_node_patches();
+    radius = calculate_radius();
+
+	// Complete the geometry initialisation
+	init_mesh();
+
+	// Initialise energies
+    done_energy_precalcs = false;
+	init_other_energies();
+	if (!skip_precalcs) init_energy_precalcs();
+}
+#endif // PREVOLHE
 
 std::vector<Charge> Mesh::get_ecm_charges(
 	const std::string& ecm_filename,
@@ -205,9 +291,11 @@ void Mesh::init_mesh(const fs::path& mesh_filename) {
     } 
 	else if (mesh_filename.extension() == ".gts") {
         // Call a utility function to read the actual file
-        GTS_Surface::read_mesh_from_file(mesh_filename.string(),
-                                         vertices,
-                                         triangles);
+        IdxListN<2> edge_list;
+		IdxListN<3> triangle_list;
+        GTS_Surface::read_mesh_from_file(mesh_filename.string(), vertices,
+										 edge_list, triangle_list);
+		create_triangles_from_vertices(edge_list, triangle_list);
     }
     else {
         std::cerr << "Mesh filename " << mesh_filename
@@ -215,19 +303,44 @@ void Mesh::init_mesh(const fs::path& mesh_filename) {
 		          << std::endl;
         throw MeshError();
     }
+	// Complete the geometry initialisation
+	init_mesh();
+}
     
-    // set the total planar area (flat triangles)
-    total_planar_area = 0;
-    for (std::vector<Triangle>::const_iterator
-			it=triangles.cbegin(), end=triangles.cend();
-         it != end; ++it)
-    {
-        total_planar_area += it->get_planar_area();
-    }
-    
+void Mesh::init_mesh(void) {
     // generally useful for vertices to have coherent vertex indices
     reorder_vertex_triangles();
     
+#ifndef PREVOLHE
+    Uint ctr = 0;
+	constexpr unsigned int perm[] = { 1, 2, 0 };
+#endif // PREVOLHE
+    total_planar_area = 0;
+	e2tMap.reserve(3*triangles.size()/2);
+	v2tMap.reserve(3*triangles.size());
+    for (const auto& tri: triangles) {
+#ifndef PREVOLHE
+		// Update vertex and edge to triangle maps - anticlockwise ordering
+		Multiplet<3> va = {tri.get_v1_idx(),tri.get_v2_idx(),tri.get_v3_idx()};
+		for (int i = 0; i < 3; i++) {
+			Multiplet<2> ve = parr(std::minmax(va[i], va[perm[i]]));
+			// if (e2tMap.count(ve) < 2)
+				e2tMap.emplace(ve,ctr);
+			// else blow up
+		}
+		// Three keys for triangles
+		Uint ia[] = { 0, 1, 2 };
+		for (int i = 0; i < 3; i++) {
+			Multiplet<3> vak = {va[ia[0]], va[ia[1]], va[ia[2]]};
+			v2tMap[vak] = ctr;
+			for (int j = 0; j < 3; j++) ia[j] = perm[ia[j]];
+		}
+		ctr++;
+#endif // PREVOLHE
+
+		// and set the total planar area (flat triangles)
+        total_planar_area += tri.get_planar_area();
+    }
     return;
 }
 
@@ -241,22 +354,11 @@ void Mesh::init_charges(const fs::path& xyzqr_filename) {
 	// Build a key map to find the charge indices later and
 	// copy the non-zero ones into charges
 	unsigned int ctr = 0;
-	for (std::vector<Charge>::const_iterator
-			ch = allCharges.cbegin(), ch_end = allCharges.cend();
-		 ch != ch_end; ++ch)
-	{
-		// Despite its name, exclude charges with no charge, hydrophobicity or
-		// LJ parameters - these will be HETATMs such as water
-		if (ch->charge != 0 || ch->hydrophobicity != 0 ||
-			(ch->sigma != 0 && ch->epsilon != 0)) {
-			allChargesMap[*ch] = ctr++;
+	for (const auto& ch: allCharges) {
+		allChargesMap[ch] = ctr++;
 
-			// And for backward compatibility include only charges in this list
-			if (ch->charge != 0) {
-				Charge c(*ch);
-				charges.push_back(c);
-			}
-		}
+		// And for backward compatibility include only charges in this list
+		if (ch.charge != 0) charges.push_back(ch);
 	}
 	
 #endif // PREHYDROPHOBIC
@@ -600,6 +702,90 @@ void Mesh::init_fh_vals(const fs::path& fh_filename) {
     fh_file.close();
 }
 
+#ifndef PREHYDROPHOBIC
+void Mesh::init_other_energies(void) {
+    // first get the bounding cube for the mesh
+    Vector centre;
+    double edge_length;
+    get_bounding_cube(centre, edge_length);
+
+	// Octree for hydrophobicities
+	// This achieves O(logN) for charges, but alas not for node patches.
+	boost::scoped_ptr<Octree<Node<Charge>, Charge> >
+		hytree(new Octree< Node<Charge>, Charge >(10, centre, edge_length));
+    // add all surface charges into the octree
+    for (const auto& ch: allCharges) 
+		if (ch.hydrophobicity != 0.0) hytree->add(ch);
+	// if no hydrophobicities, use all charges: nppc must be non-zero.
+	// this is an edge case: expect hydro+LJ or neither, not LJ but no hydro
+	if (hytree->size() == 0) {
+		if (allCharges.size() == 0) return;  // default ch_idx invalid - ok
+		for (const auto& ch: allCharges) hytree->add(ch);
+	}
+
+	// Find each node's nearest charge and assign hydrophobicity to the patch
+	auto dist = [](const Vector& v, const Charge& c) noexcept -> double
+		{ return (v - c).length() - c.radius; };
+    for (auto& np: node_patches) {
+		// Do this relative to vertex;  arguably should be to centroid
+		const Charge& c = hytree->get_nearest(np.get_node(), dist);
+		np.ch_idx = allChargesMap.at(c);	// Exception if c not present
+		if (np.ch_idx >= nppc.size()) nppc.resize(np.ch_idx+1);
+		nppc[np.ch_idx]++;				// Number of NP's for this charge
+		np.hydrophobicity = c.hydrophobicity;  // Stored on np for smoothing
+    }
+	// Smooth values across all node patches
+	// TODO is this actually useful;  if not, lose np hydrophobicity
+	std::vector<double> merged;
+	unsigned int ctr = 0;
+	merged.reserve(get_num_node_patches());
+    for (auto& np: node_patches) {
+		// Get list of indices of mesh triangles for which this node is a vertex
+		const std::vector<unsigned int>& tri
+			= vertices[np.vertex_idx].get_triangle_indices();
+		// Obtain weighted average of neighbouring node patch hydrophobicities
+		// Easiest to double count each node's contribution (triangles link)
+		// And by construction, node patch indices match vertex indices...
+		merged[ctr] = np.hydrophobicity;
+		Charge& ch = allCharges[np.ch_idx];
+		double datom = (ch - np.get_node()).length();
+		double ratom = ch.radius;
+		double sow = 1.0;
+		if (datom > ratom) {
+			sow = 2 * ratom / datom;	// count double as others are
+			merged[ctr] *= sow;
+			for (const auto& t: tri) {
+				// Add up the hydrophobicities from the neighbouring nodes
+				const Triangle& tr = triangles[t];
+				unsigned int tvi[] = {tr.v1_idx != ctr ? tr.v1_idx : tr.v2_idx,
+									tr.v3_idx != ctr ? tr.v3_idx : tr.v2_idx};
+				for (int i = 0; i < 2; i++) {
+					BasicNodePatch& nbr = node_patches[tvi[i]];
+					Charge& ch = allCharges[nbr.ch_idx];	// new reference
+					datom = (ch - nbr.get_node()).length();
+					ratom = ch.radius;
+					double w = ratom /
+						(datom + (nbr.get_node() - np.get_node()).length());
+					merged[ctr] += nbr.hydrophobicity * w;
+					sow += w;
+				}
+			}
+		}
+		if (sow == 0.0)
+			merged[ctr] = np.hydrophobicity;  // default position
+		else
+			merged[ctr] /= sow;  // sum of weights
+		ctr++;
+	}
+	// Play the merged values back into the nodes
+	ctr = 0;
+    for (auto& np: node_patches) {
+		np.hydrophobicity = merged[ctr];
+		ctr++;
+	}
+}
+#endif // PREHYDROPHOBIC
+
 void Mesh::init_energy_precalcs() {
 
     const unsigned int num_patches = node_patches.size();
@@ -616,90 +802,8 @@ void Mesh::init_energy_precalcs() {
     Vector centre;
     double edge_length;
     get_bounding_cube(centre, edge_length);
-#ifndef PREHYDROPHOBIC
-//TODO this should be in its own sub-method to avoid distraction
-
-	// Octree for hydrophobicities
-	// This achieves O(logN) for charges, but alas not for node patches.
-	boost::scoped_ptr<Octree<Node<Charge>, Charge> >
-		hytree(new Octree< Node<Charge>, Charge >(10, centre, edge_length));
-    // add all charges into the octree
-    for (std::vector<Charge>::const_iterator
-			ch_it=allCharges.cbegin(), ch_end=allCharges.cend();
-		 ch_it != ch_end; ++ch_it)
-    {
-        const Charge& ch = *ch_it;
-		hytree->add(ch);
-    }
-	// Find each node's nearest charge and assign hydrophobicity to the patch
-	auto dist = [](const Vector& v, const Charge& c) noexcept -> double
-		{ return (v - c).length() - c.radius; };
-    for (std::vector<BasicNodePatch>::iterator
-			it=node_patches.begin(), end=node_patches.end();
-		 it != end; ++it)
-    {
-		// Do this relative to vertex;  arguably should be to centroid
-		const Charge& c = hytree->get_nearest(it->get_node(), dist);
-		it->ch_idx = allChargesMap.at(c);	// Exception if c not present
-		if (it->ch_idx >= nppc.size()) nppc.resize(it->ch_idx+1);
-		nppc[it->ch_idx]++;				// Number of NP's for this charge
-		it->hydrophobicity = c.hydrophobicity;  // Stored on np for smoothing
-    }
-	// Smooth values across all node patches
-	// TODO is this actually useful;  if not, lose np hydrophobicity
-	std::vector<double> merged;
-	unsigned int ctr = 0;
-	merged.reserve(get_num_node_patches());
-    for (std::vector<BasicNodePatch>::iterator
-			it=node_patches.begin(), end=node_patches.end();
-		 it != end; ++it)
-    {
-		// Get list of indices of mesh triangles for which this node is a vertex
-		const std::vector<unsigned int>& tri
-			= vertices[it->vertex_idx].get_triangle_indices();
-		// Obtain weighted average of neighbouring node patch hydrophobicities
-		// Easiest to double count each node's contribution (triangles link)
-		// And by construction, node patch indices match vertex indices...
-		merged[ctr] = it->hydrophobicity;
-		Charge& ch = allCharges[it->ch_idx];
-		double datom = (ch - it->get_node()).length();
-		double ratom = ch.radius;
-		double sow = 1.0;
-		if (datom > ratom) {
-			sow = 2 * ratom / datom;	// count double as others are
-			merged[ctr] *= sow;
-			for (std::vector<unsigned int>::const_iterator
-					t=tri.begin(), tend=tri.end();
-				t != tend; ++t)
-			{
-				// Add up the hydrophobicities from the neighbouring nodes
-				const Triangle& tr = triangles[*t];
-				unsigned int tvi[] = {tr.v1_idx != ctr ? tr.v1_idx : tr.v2_idx,
-									tr.v3_idx != ctr ? tr.v3_idx : tr.v2_idx};
-				for (int i = 0; i < 2; i++) {
-					BasicNodePatch& nbr = node_patches[tvi[i]];
-					Charge& ch = allCharges[nbr.ch_idx];	// new reference
-					datom = (ch - nbr.get_node()).length();
-					ratom = ch.radius;
-					double w = ratom /
-						(datom + (nbr.get_node() - it->get_node()).length());
-					merged[ctr] += nbr.hydrophobicity * w;
-					sow += w;
-				}
-			}
-		}
-		merged[ctr] /= sow;  // sum of weights
-		ctr++;
-	}
-	// Play the merged values back into the nodes
-	ctr = 0;
-    for (auto& np: node_patches) {
-		np.hydrophobicity = merged[ctr];
-		ctr++;
-	}
 
 	// Octree for FMM
-#endif // PREHYDROPHOBIC
     boost::scoped_ptr<fmm::FMM_Octree_6FIG_ACCURACY>
 		fmm(new fmm::FMM_Octree_6FIG_ACCURACY(NB_SIZE, centre, edge_length));
 
@@ -920,6 +1024,267 @@ void Mesh::read_energy_precalcs(
     done_energy_precalcs = true;
 }
 
+void Mesh::create_triangles_from_vertices(
+	const IdxListN<2>& edge_list,
+	const IdxListN<3>& triangle_list)
+{
+	std::vector<Edge> edges;
+	IdxMapN<2> edge_map;
+	
+	// reserve storage space
+	edges.reserve(edge_list.size());
+	edge_map.reserve(edge_list.size());
+	triangles.reserve(triangle_list.size());
+
+	// get edges
+	for (const auto& ea: edge_list) {
+		unsigned int eidx = edges.size();
+		edges.push_back(Edge());
+		edges.back().set_vertices(ea[0], ea[1]);
+		edge_map.emplace(ea, eidx);
+	}
+
+	// get triangles
+	for (const auto& te: triangle_list) {
+		// Create a new triangle object from the vertices on return list
+		unsigned int t_idx = triangles.size();
+		triangles.push_back(Triangle(vertices, te[0],te[1],te[2]));
+
+		// Add the triangle to mesh vertices and local edge list
+		for (int i = 0; i < 3; i++) vertices[te[i]].add_triangle(t_idx);
+		constexpr unsigned int perm[] = { 1, 2, 0 };
+		for (int i = 0; i < 3; i++) {
+			Multiplet<2> va = parr(std::minmax(te[i], te[perm[i]]));
+			edges[edge_map.at(va)].add_triangle(t_idx);
+		}
+	}
+
+	for (const auto& ed: edges) {
+		// assert that all edges have exactly two triangles (otherwise mesh is pathological)
+		assert(ed.tctr == 2);
+		Triangle& t1 = triangles[ed.t1_idx];
+		Triangle& t2 = triangles[ed.t2_idx];
+		t1.set_adjacent_normal(t2);
+		t2.set_adjacent_normal(t1);
+	}
+
+	// Check the vertex normals are all set correctly
+	bool vnormals_set = false;
+	for (auto& v: vertices) {
+		const Vector& n = v.get_normal();
+		if (n.x == 0.0 && n.y == 0.0 && n.z == 0.0) {
+			//std::cout << "Calculating vertex normals by mean planar weight around nodes." << std::endl;
+			v.set_normal(triangles);
+			vnormals_set = true;
+		}
+		else {
+			// verify that supplied vertex normals are valid
+			assert(fabs(n.length() - 1.0) < 1e-6);
+		}
+	}
+	if (vnormals_set) {
+		// reset the vertex normals within the triangle objects
+		for (auto& t: triangles) t.reinit_vertex_normals(vertices);
+	}
+	return;
+};
+
+std::function<Mesh::Multiplet<2>(std::pair<Mesh::Uint,Mesh::Uint>&&)> Mesh::parr
+	= [](std::pair<Mesh::Uint,Mesh::Uint>&& p) noexcept -> Mesh::Multiplet<2> {
+	Mesh::Multiplet<2> m = {std::get<0>(p), std::get<1>(p)};
+	return m;
+};
+
+Mesh& Mesh::create_mesh2(const Mesh& mp, bool force_planar) {
+
+	using namespace meshing;
+	meshing = std::make_unique<Meshing<Mesh>>(*this, mp);
+	Meshing<Mesh>& m = *meshing;
+
+	// Get a list of apolar nodes on the additional mesh
+	IdxSet apolar;
+	apolar.reserve(mp.node_patches.size());
+	for (const auto& np: mp.node_patches)
+		if (np.hydrophobicity < 0) apolar.insert(np.vertex_idx);
+
+	// Find the apolar boundaries and regions on additional mesh
+	List<Boundary> aboundaries;
+	m.find_boundaries(mp, apolar, true, aboundaries);
+
+	// Get a list of apolar nodes on the primary mesh
+	IdxSet papolar;
+	papolar.reserve(node_patches.size());
+	for (const auto& np: node_patches)
+		if (np.hydrophobicity < 0) papolar.insert(np.vertex_idx);
+
+	// Exclude buried primary mesh nodes
+	// This is O(N^3), but is only needed in preparation, and is mitigated by
+	// the smaller number of apolar nodes selected above, the O(N^2) condition
+	// of normal aligned to vector to additional mesh, and early exit
+	// from pt_is_internal.  A better way surely exists?
+	// The idea is that this may help with matching boundaries, though that
+	// already has some defences against buried surfaces.  However, this is not
+	// enough:  should also check for e.g. polar nodes on primary mesh whose
+	// nearest node on the additional mesh is apolar, indicating that the
+	// primary node is "occluded" and should be treated as apolar.
+	// Instead, a simple hack is used at the end to eliminate isolated
+	// regions formed by boundary linkages around nested regions.
+	IdxSet remove;	// List of primary mesh points to remove from papolar
+#ifdef EXCLUDE_BURIED_REGIONS
+	for (const auto& pvi: papolar) {
+		const Vector& pv = vertices[pvi];
+		const Vector& pn = vertices[pvi].get_normal();
+		bool exclude = true;
+Uint count = 0;
+		for (const auto& avi: apolar) {
+			const Vector& av = mp.vertices[avi];
+			const Vector& an = mp.vertices[avi].get_normal();
+			Vector dir = (av-pv);
+			// If additional mesh normal is opposed to dir from pv, ignore av
+			if (dir.dot(an) < 0) continue;
+			// If primary mesh normal is opposed to dir from pv, ignore av
+			if (dir.dot(pn) < 0) continue;
+			// If there is a point on primary between av and pv, ignore av
+			Vector nearer = av;
+			if (Meshing<Mesh>::pt_is_internal(*this, pv+pn/100,
+					Meshing<Mesh>::pt_hitVertices, &dir, &nearer)) continue;
+			// Passed all tests, clear line from pv to av, do not exclude pv
+count++;
+			exclude = false;
+		}
+		// If still excluded, pv is buried - mark it for removal
+		if (exclude) remove.insert(pvi);
+	}
+#endif // EXCLUDE_BURIED_REGIONS
+	// Remove the buried primary mesh points
+	IdxSet polar;
+	polar.reserve(papolar.size()-remove.size());
+	std::set_difference(papolar.cbegin(), papolar.cend(),
+						remove.cbegin(), remove.cend(),
+						std::inserter(polar, polar.begin()));
+
+	// Find the polar boundaries on primary mesh as exterior to apolar regions
+	List<Boundary> pboundaries;
+	m.find_boundaries(*this, polar, false, pboundaries);
+
+	// If the additional Mesh boundaries outnumber the primary ones...
+	if (pboundaries.size() < aboundaries.size()) {
+		// Possibly could reverse the linkage, but this is weird enough
+		std::cerr << "Mismatched meshes?  Too few primary mesh regions.  "
+			<< "This may happen if the primary mesh is relatively coarse."
+			<< std::endl;
+		throw std::exception();
+	}
+
+	// If either boundary list is empty, this can go no further
+	// Just make the best decision
+	if (aboundaries.size() == 0) {
+		if (apolar.size() > 0)
+			mesh2 = std::make_shared<Mesh>(mp);
+		else
+			mesh2 = std::make_shared<Mesh>(*this);
+		return *mesh2;
+	}
+	if (pboundaries.size() == 0) {
+		if (polar.size() > 0)	// currently holds apolar indices
+			mesh2 = std::make_shared<Mesh>(mp);
+		else
+			mesh2 = std::make_shared<Mesh>(*this);
+		return *mesh2;
+	}
+
+	// Pair the boundaries
+	const APlink& aplink = m.match_boundaries(aboundaries, pboundaries);
+
+	// Set up the objects which describe the new mesh
+	IdxMap<> avmap, pvmap;	// Vertex indices old to new
+	avmap.reserve(mp.vertices.size());	// don't actually know, but max
+	pvmap.reserve(vertices.size());
+
+	// Invert the primary mesh regions
+	// get all primary mesh nodes not in an aplink primary region
+	IdxSet exclude;
+	int abi, pbi;
+	for (const auto& ap: aplink) {
+		std::tie(pbi, abi) = ap;
+		for (const auto& pn: pboundaries[pbi].region) exclude.insert(pn);
+	}
+	Boundary pboundary;	// boundary will stay empty
+	IdxOrdSet pregion;
+	for (unsigned int vidx = 0; vidx < vertices.size(); vidx++) {
+		if (exclude.count(vidx) == 0) pregion.insert(vidx);
+	}
+	// Now fill in the lists required for the new mesh
+	// Start with the primary region
+	m.convert_region(*this, pregion, pvmap);
+	Uint flsize = m.get_faces().size();
+	source.resize(0);
+	source.resize(flsize);	// Add flsize zeros TODO enum
+
+	// Add the additional interior vertices, edges and faces to these lists
+	for (int ri = 0; ri < aboundaries.size(); ri++) {
+		m.convert_region(mp, aboundaries[ri].region, avmap);
+	}
+	source.insert(source.end(), m.get_faces().size()-flsize, 1);
+	flsize = m.get_faces().size();
+
+	// Boundaries can now be done (new faces and reference interior vertices)
+	for (const auto& ap: aplink) {
+		std::tie(pbi, abi) = ap;
+		m.convert_boundary(*this, pboundaries[pbi].blist, pvmap);
+		m.convert_boundary(mp, aboundaries[abi].blist, avmap);
+	}
+	source.insert(source.end(), m.get_faces().size()-flsize, 2);
+	flsize = m.get_faces().size();
+
+	m.link_boundaries(aboundaries, pboundaries);
+	source.insert(source.end(), m.get_faces().size()-flsize, 3);
+
+	// Now have a complete set of vertices, edges and faces
+	mesh2 = std::make_shared<Mesh>(*this, m.get_vertices(), m.get_edges(),
+									m.get_faces(), force_planar);
+	std::cout << "Mesh2 created with " << mesh2->vertices.size()
+			<< " vertices and " << mesh2->node_patches.size()
+			<< " node patches" << std::endl;
+	return *mesh2;
+}
+
+void Mesh::write_mesh(const std::string& m) const {
+	IdxListN<2> edge_list;
+	IdxListN<3> face_list;
+	IdxMapN<2> edge_map;
+	constexpr unsigned int perm[] = { 1, 2, 0 };
+
+	// Deal with all the edges first to get their indices
+	for (const auto& tri: triangles) {
+		Multiplet<3> tvi
+			= {tri.get_v1_idx(),tri.get_v2_idx(),tri.get_v3_idx()};
+
+		for (int i = 0; i < 3; i++) {
+			Multiplet<2> eva = parr(std::minmax(tvi[i], tvi[perm[i]]));
+			if (edge_map.count(eva) == 0) {
+				edge_map[eva] = edge_list.size();
+				edge_list.push_back(eva);
+			}
+		}
+	}
+	// Now deal with the triangles converting vertex pairs to edge indices
+	for (const auto& tri: triangles) {
+		Multiplet<3> tvi
+			= {tri.get_v1_idx(),tri.get_v2_idx(),tri.get_v3_idx()};
+
+		Multiplet<3> tei;
+		for (int i = 0; i < 3; i++) {
+			Multiplet<2> eva = parr(std::minmax(tvi[i], tvi[perm[i]]));
+			tei[i] = edge_map.at(eva);
+		}
+		face_list.push_back(tei);
+	}
+
+	// Write out the gts file
+	GTS_Surface::write_mesh_to_file(m, vertices, edge_list, face_list);
+}
+
 KahanVector Mesh::calculate_qe_force(
 	double Dprotein,
 	double Dsolvent,
@@ -1114,7 +1479,6 @@ std::string Mesh::kinemage_node_patches() const {
 		 it != end; ++it)
     {
         buf << it->kinemage_edges(triangles);
-        break;
     }
     
     buf << "@trianglelist {node_patches}\n";
@@ -1149,7 +1513,6 @@ std::string Mesh::kinemage_node_patches() const {
 			              << tri << ".  Puzzling ... " << std::endl;
             }
         }
-        break;
     }
     
     buf << "@vectorlist {qual_pts} color=grey off\n";
@@ -1166,7 +1529,6 @@ std::string Mesh::kinemage_node_patches() const {
             buf << "{}P " << a.x << " " << a.y << " " << a.z << " "
 			              << b.x << " " << b.y << " " << b.z << "\n";
         }
-        break;
     }
     
     buf << "@spherelist {qual_pts_spheres} color=blue off\n";
@@ -1181,7 +1543,6 @@ std::string Mesh::kinemage_node_patches() const {
             Vector a = qp.pt();
             buf << "r=0.01 {} " << a.x << " " << a.y << " " << a.z << "\n";
         }
-        break;
     }
     
     buf << "@spherelist {quad_pts_spheres} color=blue off\n";
@@ -1197,7 +1558,6 @@ std::string Mesh::kinemage_node_patches() const {
             Vector a = qp.pt();
             buf << "r=0.01 {} " << a.x << " " << a.y << " " << a.z << "\n";
         }
-        break;
     }
     
     buf << "@vectorlist {quad_pts} color=grey off\n";
@@ -1214,11 +1574,35 @@ std::string Mesh::kinemage_node_patches() const {
             buf << "{}P " << a.x << " " << a.y << " " << a.z << " "
 			              << b.x << " " << b.y << " " << b.z << "\n";
         }
-        break;
     }
     
     return buf.str();
 }
+
+std::string Mesh::kinemage_meshing(void) const {
+    std::ostringstream buf;
+	if (!meshing) return buf.str();
+    buf << "@trianglelist {faces}\n";
+	const char* col[] = {"", "blue", "green", "yellow"};
+	const auto &face_list = meshing->get_faces();
+	const auto &vertex_list = meshing->get_vertices();
+
+	for (unsigned int i = 0; i < face_list.size(); i++) {
+		const auto& face = face_list[i];
+		const Vector& a = vertex_list[face[0]];
+		const Vector& b = vertex_list[face[1]];
+		const Vector& c = vertex_list[face[2]];
+		const char *colour = col[source[i]];
+
+		// kinemage a quadrilateral with the fh values
+		buf << "X " << colour << " " << a.x << " " << a.y << " " << a.z << " "
+					<< colour << " " << b.x << " " << b.y << " " << b.z << " "
+					<< colour << " " << c.x << " " << c.y << " " << c.z
+			<< std::endl;
+	}
+	return buf.str();
+};
+
 
 std::string Mesh::kinemage_fh_vals(
 	double fscale,
@@ -1578,6 +1962,17 @@ Vector Mesh::calc_reaction_field_force(const Offsets& offs,
     return force*ONE_OVER_4PI;
 }
 #endif // if 0
+
+#ifndef PREVOLHE
+const Triangle* Mesh::find_triangle(Uint v1, Uint v2, Uint v3) const {
+	Multiplet<3> va = {v1, v2, v3};
+	auto tri = v2tMap.find(va);
+	if (tri != v2tMap.end()) 
+		return &triangles[tri->second];
+	else
+		return nullptr;
+}
+#endif // PREVOLHE
 
 // Add a mesh to the list
 boost::shared_ptr<ListedMesh>

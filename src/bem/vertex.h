@@ -25,6 +25,7 @@ public:
     friend class Mesh;
     friend class Triangle;
 
+    Vertex() : Vector(0,0,0), normal(0,0,0) {}
     Vertex(const Vector& v) : Vector(v), normal(0,0,0) {}
     Vertex(const Vector& v, const Vector& vn) : Vector(v), normal(vn) {}
     

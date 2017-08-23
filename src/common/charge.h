@@ -147,8 +147,11 @@ inline double Charge::read_charges_from_file(
 		   >> hyd >> sig >> eps;
 #endif // PREHYDROPHOBIC
 
-		// skip zero charges
+		// skip zero charges if requested
 		if (skip_zeroes && charge == 0.0) continue;
+		// In any event, skip charges with no charge, hydrophobicity or
+		// LJ parameters - these will be HETATMs such as water
+		if (charge == 0.0 && hyd == 0.0 && (sig == 0.0 || eps == 0.0)) continue;
 
 		net_charge += charge;
 

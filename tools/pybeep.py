@@ -309,7 +309,9 @@ class Mesh(_Mesh, object):
             except:
                 pass
             break
-        fmt = "%2.16e " * (10 if hydro else 8)
+        fmt = "%2.16e " * 8
+        if hydro:
+            fmt += "%2.16e %d"
         for np in self.node_patches:
             fx = np.force_coefficient_f.x
             fy = np.force_coefficient_f.y

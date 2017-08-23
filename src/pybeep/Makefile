@@ -44,7 +44,9 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/acx_pthread.m4 \
 	$(top_srcdir)/m4/ax_check_cl.m4 \
 	$(top_srcdir)/m4/ax_lang_compiler_ms.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
+	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
+	$(top_srcdir)/m4/lt~obsolete.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -75,7 +77,9 @@ am__base_list = \
 am__installdirs = "$(DESTDIR)$(libdir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 libBEEP_la_DEPENDENCIES = ../bem/libbem.la
-am_libBEEP_la_OBJECTS = libBEEP_la-pybeep.lo libBEEP_la-beep.lo
+am__dirstamp = $(am__leading_dot)dirstamp
+am_libBEEP_la_OBJECTS = libBEEP_la-pybeep.lo \
+	../beep/libBEEP_la-beep.lo
 libBEEP_la_OBJECTS = $(am_libBEEP_la_OBJECTS)
 libBEEP_la_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
@@ -119,6 +123,7 @@ CXXFLAGS = -g -O2
 CYGPATH_W = echo
 DEFS = -DHAVE_CONFIG_H $(am__append_1)
 DEPDIR = .deps
+DLLTOOL = false
 DSYMUTIL = 
 DUMPBIN = 
 ECHO_C = 
@@ -141,7 +146,9 @@ LIBTOOL = $(SHELL) $(top_builddir)/libtool
 LIPO = 
 LN_S = ln -s
 LTLIBOBJS = 
+LT_SYS_LIBRARY_PATH = 
 MAKEINFO = ${SHELL} /d/mw6/u/la002/pjt/src/beep-0.2/missing --run makeinfo
+MANIFEST_TOOL = :
 MKDIR_P = /bin/mkdir -p
 NM = /usr/bin/nm -B
 NMEDIT = 
@@ -170,6 +177,7 @@ abs_builddir = /d/mw6/u/la002/pjt/src/beep-0.2/src/pybeep
 abs_srcdir = /d/mw6/u/la002/pjt/src/beep-0.2/src/pybeep
 abs_top_builddir = /d/mw6/u/la002/pjt/src/beep-0.2
 abs_top_srcdir = /d/mw6/u/la002/pjt/src/beep-0.2
+ac_ct_AR = ar
 ac_ct_CC = gcc
 ac_ct_CXX = g++
 ac_ct_DUMPBIN = 
@@ -204,7 +212,6 @@ libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
 localstatedir = ${prefix}/var
-lt_ECHO = echo
 mandir = ${datarootdir}/man
 mkdir_p = /bin/mkdir -p
 oldincludedir = /usr/include
@@ -223,8 +230,8 @@ top_srcdir = ../..
 lib_LTLIBRARIES = libBEEP.la
 libBEEP_la_SOURCES = pybeep.cpp ../beep/beep.cpp 
 libBEEP_la_LIBADD = ../bem/libbem.la 
-libBEEP_la_LDFLAGS = -lboost_python -lgomp -static-libstdc++ 
-libBEEP_la_CPPFLAGS = -I/usr/include/python -fopenmp
+libBEEP_la_LDFLAGS = $(LDPYBEEP)
+libBEEP_la_CPPFLAGS = -fopenmp
 EXTRA_DIST = add_results_to_mtz.py \
 beep-ecm.py \
 beep-nocrowding.py \
@@ -311,35 +318,48 @@ clean-libLTLIBRARIES:
 	  echo "rm -f \"$${dir}/so_locations\""; \
 	  rm -f "$${dir}/so_locations"; \
 	done
+../beep/$(am__dirstamp):
+	@$(MKDIR_P) ../beep
+	@: > ../beep/$(am__dirstamp)
+../beep/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) ../beep/$(DEPDIR)
+	@: > ../beep/$(DEPDIR)/$(am__dirstamp)
+../beep/libBEEP_la-beep.lo: ../beep/$(am__dirstamp) \
+	../beep/$(DEPDIR)/$(am__dirstamp)
 libBEEP.la: $(libBEEP_la_OBJECTS) $(libBEEP_la_DEPENDENCIES) 
 	$(libBEEP_la_LINK) -rpath $(libdir) $(libBEEP_la_OBJECTS) $(libBEEP_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
+	-rm -f ../beep/libBEEP_la-beep.$(OBJEXT)
+	-rm -f ../beep/libBEEP_la-beep.lo
 
 distclean-compile:
 	-rm -f *.tab.c
 
-include ./$(DEPDIR)/libBEEP_la-beep.Plo
+include ../beep/$(DEPDIR)/libBEEP_la-beep.Plo
 include ./$(DEPDIR)/libBEEP_la-pybeep.Plo
 
 .cpp.o:
-	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
+	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Po
 #	source='$<' object='$@' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(CXXCOMPILE) -c -o $@ $<
 
 .cpp.obj:
-	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ `$(CYGPATH_W) '$<'`
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.obj$$||'`;\
+	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ `$(CYGPATH_W) '$<'` &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Po
 #	source='$<' object='$@' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(CXXCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
 
 .cpp.lo:
-	$(LTCXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
-	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Plo
+	depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.lo$$||'`;\
+	$(LTCXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+	$(am__mv) $$depbase.Tpo $$depbase.Plo
 #	source='$<' object='$@' libtool=yes \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(LTCXXCOMPILE) -c -o $@ $<
@@ -351,18 +371,19 @@ libBEEP_la-pybeep.lo: pybeep.cpp
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
 #	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libBEEP_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libBEEP_la-pybeep.lo `test -f 'pybeep.cpp' || echo '$(srcdir)/'`pybeep.cpp
 
-libBEEP_la-beep.lo: ../beep/beep.cpp
-	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libBEEP_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libBEEP_la-beep.lo -MD -MP -MF $(DEPDIR)/libBEEP_la-beep.Tpo -c -o libBEEP_la-beep.lo `test -f '../beep/beep.cpp' || echo '$(srcdir)/'`../beep/beep.cpp
-	$(am__mv) $(DEPDIR)/libBEEP_la-beep.Tpo $(DEPDIR)/libBEEP_la-beep.Plo
-#	source='../beep/beep.cpp' object='libBEEP_la-beep.lo' libtool=yes \
+../beep/libBEEP_la-beep.lo: ../beep/beep.cpp
+	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libBEEP_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT ../beep/libBEEP_la-beep.lo -MD -MP -MF ../beep/$(DEPDIR)/libBEEP_la-beep.Tpo -c -o ../beep/libBEEP_la-beep.lo `test -f '../beep/beep.cpp' || echo '$(srcdir)/'`../beep/beep.cpp
+	$(am__mv) ../beep/$(DEPDIR)/libBEEP_la-beep.Tpo ../beep/$(DEPDIR)/libBEEP_la-beep.Plo
+#	source='../beep/beep.cpp' object='../beep/libBEEP_la-beep.lo' libtool=yes \
 #	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) \
-#	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libBEEP_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libBEEP_la-beep.lo `test -f '../beep/beep.cpp' || echo '$(srcdir)/'`../beep/beep.cpp
+#	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libBEEP_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o ../beep/libBEEP_la-beep.lo `test -f '../beep/beep.cpp' || echo '$(srcdir)/'`../beep/beep.cpp
 
 mostlyclean-libtool:
 	-rm -f *.lo
 
 clean-libtool:
 	-rm -rf .libs _libs
+	-rm -rf ../beep/.libs ../beep/_libs
 
 ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
@@ -474,6 +495,8 @@ clean-generic:
 distclean-generic:
 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
 	-test . = "$(srcdir)" || test -z "$(CONFIG_CLEAN_VPATH_FILES)" || rm -f $(CONFIG_CLEAN_VPATH_FILES)
+	-rm -f ../beep/$(DEPDIR)/$(am__dirstamp)
+	-rm -f ../beep/$(am__dirstamp)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
@@ -484,7 +507,7 @@ clean-am: clean-generic clean-libLTLIBRARIES clean-libtool \
 	mostlyclean-am
 
 distclean: distclean-am
-	-rm -rf ./$(DEPDIR)
+	-rm -rf ../beep/$(DEPDIR) ./$(DEPDIR)
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -530,7 +553,7 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-am
-	-rm -rf ./$(DEPDIR)
+	-rm -rf ../beep/$(DEPDIR) ./$(DEPDIR)
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
@@ -565,6 +588,7 @@ uninstall-am: uninstall-libLTLIBRARIES
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
 	tags uninstall uninstall-am uninstall-libLTLIBRARIES
 
+#AM_CXXFLAGS = -std=c++1z
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
