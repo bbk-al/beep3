@@ -43,28 +43,13 @@ const std::string MeshTarball::TENSOR_TAG = "diffusion_tensor";
 const std::string MeshTarball::CENTRE_TAG = "centre";
 const std::string MeshTarball::ELLIPSOID_TAG = "ellipsoid";
 const std::string MeshTarball::ECM_TAG = "ecm";
-#ifndef PREVOLHE
 const std::string MeshTarball::MESH2_TAG = "mesh2";
 const std::string MeshTarball::ENERGIES2_TAG = "energies2";
-#endif // PREVOLHE
 
 
 void MeshTarball::init() {
 	// first change directory to a safe working location
-#ifdef DELETED
-    char work_dir_template[] = "tmpdir.XXXXXX";
-    char* d = (mkdtemp(work_dir_template));
-    if (d != nullptr) {
-        work_dir = std::string(d);
-    }
-    else {
-        std::cerr << "ERROR: Failed to create temporary working folder."
-		          << std::endl;
-        throw MeshTarball_Exception();
-    }
-#else // __DELETED__
 	fs::create_directories(work_dir);
-#endif // __DELETED__
 
 //     try 
 //     {
@@ -77,18 +62,12 @@ void MeshTarball::init() {
 //     }
 
     // extract the contents of the mesh tarball
-#ifdef DELETED
-    chdir(work_dir.c_str());
-    extract("../" + mtz_filename);
-    chdir("..");
-#else // DELETED
 	fs::path cwd{fs::current_path()};
 	fs::path mtz{mtz_filename};
 	if (mtz.is_relative()) mtz = cwd / mtz;
 	fs::current_path(work_dir);
 	extract(mtz.string());
 	fs::current_path(cwd);
-#endif // DELETED
 
     // try to parse "definition.xml"
     parse_definition_xml();
@@ -96,7 +75,6 @@ void MeshTarball::init() {
 
 MeshTarball::~MeshTarball() {
 	
-#ifndef __DELETED__
 	// Directories can be left behind because of temporary nfs files
 	// which disappear after a short delay, allowing the top level
 	// directory to be deleted only after this process exits.
@@ -119,18 +97,6 @@ MeshTarball::~MeshTarball() {
 			std::cerr << "End of entries" << std::endl;
 		} // leaving the directory still in place
 	} while (false);
-#else // __DELETED__
-    try {
-        // delete the temporary folder
-        for (fs::directory_iterator itr(work_dir), end; itr != end; ++itr) {
-            fs::remove(*itr);
-        }
-        fs::remove(work_dir);
-        
-        
-    }
-    catch (...) {}
-#endif // __DELETED__
 }
 
 int MeshTarball::copy_data(struct archive *ar, struct archive *aw)
@@ -197,11 +163,7 @@ void MeshTarball::parse_definition_xml()
 {
 
     // Open the xml config file and parse it
-#ifdef DELETED
-    std::string xml = work_dir + "/" + MESH_DEFINITION_XML;
-#else
     std::string xml = work_dir.string() + "/" + MESH_DEFINITION_XML;
-#endif // DELETED
     TiXmlDocument doc(xml.c_str());
     bool loadOkay = doc.LoadFile();
     bool failed = false;
@@ -259,10 +221,8 @@ void MeshTarball::parse_definition_xml()
     key_val_defs.push_back( triplet(&ELLIPSOID_TAG, &ellipsoid_filename, false)
 						  );
     key_val_defs.push_back( triplet(&ECM_TAG, &ecm_filename, false) );
-#ifndef PREVOLHE
     key_val_defs.push_back( triplet(&MESH2_TAG, &mesh2_filename, false) );
     key_val_defs.push_back( triplet(&ENERGIES2_TAG, &energies2_filename, false) );
-#endif // PREVOLHE
 
     // iterate over this list of allowable key/vals and fill in the struct
     for (std::vector<triplet>::iterator

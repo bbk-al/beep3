@@ -671,16 +671,12 @@ public:
 //
 //	}
 
-#ifdef PREHYDROPHOBIC
-    inline const ContentType& get_nearest(const Vector& where) const
-#else
 	static double defdist(const Vector& v, const ContentType& c)
 			{ return (v - c).length2(); }
 	// This should probably be templated, but that upsets backward compatibility
     inline const ContentType& get_nearest(
 		const Vector& where,
 		double (*distance)(const Vector&, const ContentType&) = defdist) const
-#endif // PREHYDROPHOBIC
     {
         if (size() == 0) { throw std::exception(); }
         const NodeT* node = &(get_node(where));
@@ -696,20 +692,12 @@ public:
 
         // find nearest item in neighbourhood
         const ContentType* winner = *(neighbourhood.begin());
-#ifdef PREHYDROPHOBIC
-        double winning_dist = (where - *winner).length2();
-#else
 		double winning_dist = distance(where, *winner);
-#endif // PREHYDROPHOBIC
         for (typename std::vector<ContentType*>::const_iterator it=neighbourhood.begin()+1, end=neighbourhood.end();
             it != end;
             ++it)
         {
-#ifdef PREHYDROPHOBIC
-            double dist = (where - **it).length2();
-#else
 			double dist = distance(where, **it);
-#endif // PREHYDROPHOBIC
             if (dist < winning_dist)
             {
                 winner = *it;

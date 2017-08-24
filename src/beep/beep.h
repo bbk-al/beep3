@@ -150,12 +150,10 @@ public:
 	  cmdline_qual_points_per_triangle(cmdline_quals), 
 	  cmdline_kappa(screening_kappa), 
 	  force_planar(planar),
-#ifdef PREHYDROPHOBIC
 	  resolve(true),
 	  previd(1),	// Will be invalid on BEEP creation (as required)
-	  unloc(Vector(0,0,0)),
+	  prevloc(Vector(0,0,0)),
 	  unrot(Quaternion(1,0,0,0)),
-#endif // PREHYDROPHOBIC
 	  skipping_precalcs(false)
 	{ }
 
@@ -184,27 +182,13 @@ public:
 	  cmdline_qual_points_per_triangle(other.cmdline_qual_points_per_triangle),
 	  cmdline_kappa(other.cmdline_kappa), 
 	  force_planar(other.force_planar),
-#ifdef PREHYDROPHOBIC
 	  resolve(other.resolve),
 	  previd(other.previd),
-	  unloc(other.unloc),
+	  prevloc(other.prevloc),
 	  unrot(other.unrot),
-#endif // PREHYDROPHOBIC
 	  skipping_precalcs(false),
-#ifndef __DELETED__
-//NB Lose comma above if restoring original
-	  //mesh_library(other.mesh_library),
 	  meshes(other.meshes)
 	{}
-#else
-//NB Why would you need to *append* the other's mesh_library and meshes?
-// This is replaced above by the copy constructors, which is more obvious...
-	{
-		mesh_library.insert(mesh_library.end(), other.mesh_library.begin(),
-		                    other.mesh_library.end());
-		meshes.insert(meshes.end(), other.meshes.begin(), other.meshes.end());
-	}
-#endif
     
 	//NB Destructor is default anyway
     // ~BEEP() {};
@@ -341,7 +325,6 @@ private:
     bool force_planar;
     bool skipping_precalcs;
 
-#ifndef PREHYDROPHOBIC
 	// Flag to track whether solve() is required
 	bool resolve;
 	// Reversion data
@@ -349,7 +332,6 @@ private:
 	Vector prevloc;
 	Quaternion unrot;
 
-#endif // PREHYDROPHOBIC
 	// Timers
     fmm::TimeInfo vanilla_fmm_timer;
     fmm::TimeInfo bem_fmm_timer;

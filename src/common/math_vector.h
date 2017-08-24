@@ -72,10 +72,6 @@ public:
     virtual ~VectorT() = default;
 
 	//! Constructors from superclass
-#ifdef DELETED
-    VectorT(const __Vector<float>& other) : super(other.x, other.y, other.z) {}
-    VectorT(const __Vector<double>& other) : super(other.x, other.y, other.z) {}
-#else //  DELETED
 	//! It is the responsibility of the caller to ensure that NewTypeT can
 	//! sensibly cast to PrecisionType
 
@@ -93,25 +89,14 @@ public:
 			std::move(static_cast<PrecisionType>(other.y)),
 			std::move(static_cast<PrecisionType>(other.z)))
 	{}
-#endif //  DELETED
 
 	//! Assignment from other type
     template<typename NewTypeT>
     inline thisType& operator=(const __Vector<NewTypeT>& other);
 
     //! Direct Vector cast
-#ifdef DELETED
-    template<typename another>
-    operator VectorT<another>() const {
-        VectorT<another> tmp(static_cast<PrecisionType>(super::x),
-                             static_cast<PrecisionType>(super::y),
-                             static_cast<PrecisionType>(super::z));
-        return tmp;
-    }
-#else // DELETED
 	template <typename NewTypeT>
 	inline operator VectorT<NewTypeT>();
-#endif //  DELETED
 
 	//! Constructor from coordinate values
     VectorT(PrecisionType _x, PrecisionType _y, PrecisionType _z) {
@@ -153,13 +138,6 @@ public:
                         super::y + other.y, 
                         super::z + other.z);
     }
-#ifdef DELETED
-    thisType __py_add(const thisType &other) const {
-        return thisType(super::x + other.x, 
-                        super::y + other.y, 
-                        super::z + other.z);
-    }
-#endif //  DELETED
 
     template<typename NewTypeT>
     thisType operator-(const __Vector<NewTypeT>& other) const {
@@ -167,13 +145,6 @@ public:
                         super::y - other.y, 
                         super::z - other.z);
     }
-#ifdef DELETED
-    thisType __py_subtract(const thisType &other) const {
-        return thisType(super::x - other.x, 
-                        super::y - other.y, 
-                        super::z - other.z);
-    }
-#endif //  DELETED
 
 	//! Addition and subtraction by other types
 	//! Responsibility of caller to ensure the casts are sensible.
@@ -196,13 +167,6 @@ public:
 
     inline std::string kinemage() const;
 
-#ifdef DELETED  // Now defined in pybeep.cpp
-    void py_change_coordinate_frame(const thisType& centre_of_rotation, const Quaternion& rot, const thisType& centre_of_rotation_in_new_frame)
-	{
-		change_coordinate_frame(centre_of_rotation, rot, centre_of_rotation_in_new_frame);
-	}
-#endif // DELETED
-
     // express this point as defined by the centre of rotation in the new 
     // frame; rot is a rotation operator from the old coordinate frame into
     // the new coordinate frame.
@@ -220,12 +184,6 @@ public:
     inline void apply_rotation(const Quaternion& rot);
     // for applying quaternions to vectors
     inline thisType apply_rotation(const Quaternion& rot) const;
-
-#ifdef DELETED  // Now defined in pybeep.cpp
-    // another alias for applyig a rotation- boost.python no good with overloaded funcs though
-    inline void apply_quaternion(const Quaternion& rot) { apply_rotation(rot); }
-#endif  //  DELETED
-
 };
 
 template<typename PrecisionType>
@@ -518,14 +476,8 @@ inline VectorT<PrecisionType> VectorT<PrecisionType>::change_coordinate_frame(
 	const VectorT<PrecisionType>& centre_of_rotation_in_new_frame) const
 {
 	thisType new_v = *this;
-#ifndef __DELETED_
 	new_v.change_coordinate_fram(centre_of_rotation, rot,
 								centre_of_rotation_in_new_frame);
-#else //  __DELETED_
-	new_v -= centre_of_rotation; // get relative to centre of rotation
-	new_v.apply_rotation(rot);         // apply rotation to vector -- now points from centre of rotation in new frame
-	new_v += centre_of_rotation_in_new_frame;
-#endif //  __DELETED_
 	return new_v;
 }
 

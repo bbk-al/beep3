@@ -90,9 +90,6 @@ public:
 	//! Constructor from separate mesh and xyzq files
 	Mesh(const std::string& mesh_filename,
 	     const std::string& xyzq_filename,
-#ifdef PREVOLHE
-	     bool force_planar=false);
-#else
 	     bool force_planar=false,
 	     bool skip_hydro=false,
 		 bool skip_precalcs=false);
@@ -104,15 +101,12 @@ public:
 		const IdxListN<3>& triangle_list,	//!\param in
 		bool force_planar = false,			//!\param in
 		bool skip_precalcs = true);			//!\param in
-#endif // PREVOLHE
 
 	//! Copy constructor
 	Mesh(const Mesh& other);
 
-#ifdef PRETRIPTR
-	//! Destructor
-	virtual ~Mesh();
-#endif // PRETRIPTR
+	// Destructor - no longer required, use default
+	// virtual ~Mesh();
 
 #ifdef __CHARMC__
     virtual void pup(PUP::er &p) {
@@ -137,35 +131,22 @@ public:
 	}
     std::vector<BasicNodePatch>& get_node_patches() { return node_patches; }
 
-#ifdef PREHYDROPHOBIC
-    const std::vector<Charge>& get_charges() const { return charges; }
-    std::vector<Charge>& get_charges() { return charges; }
-#else
     const std::vector<Charge>& get_charges(bool all = false) const {
 		return all ? allCharges : charges;
 	}
     std::vector<Charge>& get_charges(bool all = false) {
 		return all ? allCharges : charges;
 	}
-#endif // PREHYDROPHOBIC
 
     const std::vector<Triangle>& get_triangles() const { return triangles; }
     std::vector<Triangle>& get_triangles() { return triangles; }
 
-#ifdef PRETRIPTR
-    const std::vector<BasicTriangle*>& get_triangle_ptrs() const {
-#else
     const std::vector<std::shared_ptr<Triangle>>& get_triangle_ptrs() const {
-#endif // PRETRIPTR
 		return triangle_ptrs;
 	}
-#ifdef PRETRIPTR
-    std::vector<BasicTriangle*>& get_triangle_ptrs() { return triangle_ptrs; }
-#else
     std::vector<std::shared_ptr<Triangle>>& get_triangle_ptrs() {
 		return triangle_ptrs;
 	}
-#endif // PRETRIPTR
 
     const std::vector<Vertex>& get_vertices() const { return vertices; }
     std::vector<Vertex>& get_vertices() { return vertices; }
@@ -181,31 +162,19 @@ public:
 	
 	// get_ index methods
     inline const BasicNodePatch& get_node_patch(unsigned int index) const;
-#ifdef PREHYDROPHOBIC
-    inline const Charge& get_charge(unsigned int index) const;
-#else
     inline const Charge& get_charge(unsigned int index, bool all = false) const;
 	inline unsigned int get_npcount(unsigned int ch_idx) const;
-#endif // PREHYDROPHOBIC
     inline const Triangle& get_triangle(unsigned int index) const;
     inline const Vertex& get_vertex(unsigned int index) const;
-#ifdef PRETRIPTR
-    inline const BasicTriangle* get_triangle_ptr(unsigned int index) const;
-#else
     inline const Triangle& get_triangle_ptr(unsigned int index) const;
-#endif // PRETRIPTR
 
 	// get counts
     unsigned int get_num_vertices() const { return vertices.size(); }
     unsigned int get_num_triangles() const { return triangles.size(); }
     unsigned int get_num_node_patches() const { return node_patches.size(); }
-#ifdef PREHYDROPHOBIC
-    unsigned int get_num_charges() const { return charges.size(); }
-#else
     unsigned int get_num_charges(bool all = false) const {
 		return all ? allCharges.size() : charges.size();
 	}
-#endif // PREHYDROPHOBIC
     unsigned int len() const { return get_num_node_patches(); }
 
 	// get - other
@@ -311,11 +280,8 @@ public:
     double calculate_volume() const;
 //TODO NB this should go back to being private, but add in reset_ if needed
     void init_energy_precalcs();
-#ifndef PREHYDROPHOBIC
 	void init_other_energies(void);
-#endif // PREHYDROPHOBIC
 
-#ifndef PREVOLHE
 	// Get triangle from three vertex indices
 	const Triangle* find_triangle(Uint v1, Uint v2, Uint v3) const;
 	// Fast counts
@@ -331,17 +297,12 @@ public:
 	void create_triangles_from_vertices(
 		const IdxListN<2>& edge_list, //!\param in, vert index pairs, low-high
 		const IdxListN<3>& triangle_list); //!\param in, 3 vert idx anti-clock
-#endif // PREVOLHE
 
 private:
 
     // init a Mesh object from tarball filename
-#ifdef PREVOLHE
-    void init(const std::string&, bool force_planar=false);
-#else
     void init(const std::string&, bool force_planar = false,
 				bool skip_hydro = false, bool skip_precalcs = false);
-#endif // PREVOLHE
 
     void init_mesh(const fs::path& mesh_filename);
 	void init_mesh(void);
@@ -354,24 +315,17 @@ private:
 
     double calculate_radius();
 
-#ifndef PREVOLHE
 	template <Uint N, typename T = Uint>
 	using IdxPOMapN = std::unordered_multimap< Multiplet<N>, T,
 									hashFn<Multiplet<N>>, eqFn<Multiplet<N>> >;
-#endif // PREVOLHE
 
     Vector centre;
 
     std::vector<Triangle> triangles;
-#ifdef PRETRIPTR
-    std::vector<BasicTriangle*> triangle_ptrs;
-#else
     std::vector<std::shared_ptr<Triangle>> triangle_ptrs;
-#endif // PRETRIPTR
     std::vector<Vertex> vertices;
     std::vector<BasicNodePatch> node_patches;
     std::vector<Charge> charges;
-#ifndef PREHYDROPHOBIC
 	// This does duplicate charges, but charges is needed for backwards 
 	// compatibility.  Could have just kept neutrals here, but two lists
 	// then have to be checked whenever hydrophobicity is being considered
@@ -400,8 +354,6 @@ private:
 		allChargesMap;
 	// Need to maintain number of node patches per charge for LJ calculation
 	std::vector<unsigned int> nppc;
-#endif  // PREHYDROPHOBIC
-#ifndef PREVOLHE
 	// for fast look up of triangle id from vertex indices
 	IdxMapN<3> v2tMap;
 	IdxPOMapN<2> e2tMap;
@@ -411,7 +363,6 @@ private:
 	std::shared_ptr<Mesh> mesh2;	// shared to allow independent existence?
 	std::unique_ptr<Meshing<Mesh>> meshing;	// needed for kinemage only, with...
 	std::vector<unsigned int> source;		// source for faces of mesh2
-#endif // PREVOLHE
 
     double total_planar_area;
     double total_bezier_area;
@@ -424,9 +375,6 @@ private:
 };
 
 // ListedMesh
-#ifdef DELETED
-typedef std::vector< boost::shared_ptr<Mesh> > MeshList;
-#else
 class ListedMesh : public Mesh
 {
 public:
@@ -452,7 +400,6 @@ public:
 private:
 
 };
-#endif
 
 // inlined Mesh methods
 inline const BasicNodePatch& Mesh::get_node_patch(unsigned int index) const {
@@ -469,14 +416,6 @@ inline const Triangle& Mesh::get_triangle(unsigned int index) const {
 	return triangles[index];
 }
 
-#ifdef PREHYDROPHOBIC
-inline const Charge& Mesh::get_charge(unsigned int index) const {
-	if (index >= charges.size())
-		throw std::out_of_range("index out of range for mesh");
-
-	return charges[index];
-}
-#else
 inline
 const Charge& Mesh::get_charge(unsigned int index, bool all) const {
 	if (index >= (all ? allCharges.size() : charges.size()))
@@ -489,7 +428,6 @@ inline unsigned int Mesh::get_npcount(unsigned int ch_idx) const {
 		throw std::out_of_range("charge index out of range for mesh");
 	return nppc[ch_idx];
 }
-#endif // PREHYDROPHOBIC
 
 inline const Vertex& Mesh::get_vertex(unsigned int index) const {
 	if (index >= vertices.size())
@@ -498,19 +436,11 @@ inline const Vertex& Mesh::get_vertex(unsigned int index) const {
 	return vertices[index];
 }
 
-#ifdef PRETRIPTR
-inline const BasicTriangle* Mesh::get_triangle_ptr(unsigned int index) const {
-#else
 inline const Triangle& Mesh::get_triangle_ptr(unsigned int index) const {
-#endif // PRETRIPTR
 	if (index >= triangle_ptrs.size())
 		throw std::out_of_range("index out of range for mesh");
 
-#ifdef PRETRIPTR
-	return triangle_ptrs[index];
-#else
 	return *(triangle_ptrs[index]);
-#endif // PRETRIPTR
 }
 
 inline void
@@ -555,7 +485,7 @@ inline void Mesh::get_bounding_cube_limits(Vector &max, Vector& min) const
 	}
 	
 	// loop over charges in the mesh
-	// TODO PREHYDROPHOBIC - ok with mesh check above, but should be allCharges?
+	// TODO ok with mesh check above, but next should be allCharges?
 	for (std::vector<Charge>::const_iterator
 			it=charges.cbegin(), end=charges.cend();
 		 it != end; ++it)
@@ -607,11 +537,7 @@ inline void Mesh::create_bezier_triangles()
 	triangle_ptrs.reserve(triangles.size());
 	for (std::vector<Triangle>::const_iterator tri_it=triangles.begin(), tri_end=triangles.end(); tri_it != tri_end; ++tri_it)
 	{
-#ifdef PRETRIPTR
-		triangle_ptrs.push_back(new CurvedTriangleType(*tri_it));
-#else
 		triangle_ptrs.push_back(std::make_shared<CurvedTriangleType>(*tri_it));
-#endif // PRETRIPTR
 	}
 
 }

@@ -164,7 +164,6 @@ public:
 	// Referenced mainly in Mesh or MeshInstance
     double f;	// Potential
     double h;	// Normal derivative
-#ifndef PREHYDROPHOBIC
 	double he;	// Hydrophobic effect - only valid for the moved MeshInstance
 	bool hea;	// Used to track area summation
 //TODO this should be private and wrapped in methods
@@ -172,17 +171,14 @@ public:
 // and use a common reset method
 	double che;	// Used to record current he value during processing
 	double lj;	// Lennard-Jones
-#endif // PREHYDROPHOBIC
 	// Referenced mainly in Mesh
 	// Initialised on construction of Mesh via init_energy_precalcs
     double energy_coefficient_f;
     double energy_coefficient_h;
     Vector force_coefficient_f;
     Vector force_coefficient_h;
-#ifndef PREHYDROPHOBIC
 	unsigned int ch_idx;	// charge index (to Mesh::allCharges)
 	double hydrophobicity;	// smoothed over mesh, so charge value no use
-#endif // PREHYDROPHOBIC
 
 	// Referenced mainly in BEEP and Python
     double gc;	// refers to a geometry correction based on solid angles...
@@ -227,8 +223,6 @@ protected:
 
 };
 
-//#define PRE_LOCAL_MOVES  // Disables new local moves code
-
 // The NodePatch class describes an actual node patch located in universe
 // coordinates- it is linked conceptually to a MeshInstance which holds the
 // rotation/xyz_offset for the node patch.
@@ -252,7 +246,6 @@ public:
 	// virtuals
     // gets the reference mesh via the underlying MeshInstance pointer
     virtual const Mesh& get_ref_mesh() const;
-#ifndef PRE_LOCAL_MOVES
 	virtual void change_coordinate_frame
 		(const Vector& centre_of_rotation_old_frame,
 		 const Quaternion& rot_from_old_to_new,
@@ -262,7 +255,6 @@ public:
 		 const Vector& centre_of_rotation_old_frame,
 		 const Quaternion& rot_from_old_to_new,
 		 const Vector& centre_of_rotation_new_frame) const;
-#endif //  PRE_LOCAL_MOVES
     virtual void change_coordinate_frame(QuadList& qps) const;
     
 private:
@@ -286,19 +278,15 @@ inline BasicNodePatch::BasicNodePatch(BasicNodePatch&& other)
 	dielectric_ratio{std::move(other.dielectric_ratio)},
 	f{std::move(other.f)},
 	h{std::move(other.h)},
-#ifndef PREHYDROPHOBIC
 	he{std::move(other.he)},
 	lj{std::move(other.lj)},
-#endif // PREHYDROPHOBIC
 	energy_coefficient_f{std::move(other.energy_coefficient_f)},
 	energy_coefficient_h{std::move(other.energy_coefficient_h)},
 	force_coefficient_f{std::move(other.force_coefficient_f)},
 	force_coefficient_h{std::move(other.force_coefficient_h)},
 	gc{std::move(other.gc)},
-#ifndef PREHYDROPHOBIC
 	ch_idx{std::move(other.ch_idx)},
 	hydrophobicity{std::move(other.hydrophobicity)},
-#endif // PREHYDROPHOBIC
 	node{std::move(other.node)},
 	centroid{std::move(other.centroid)},
 	normal{std::move(other.normal)},

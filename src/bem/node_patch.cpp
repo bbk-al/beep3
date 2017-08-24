@@ -59,9 +59,7 @@ BasicNodePatch::BasicNodePatch(
 	mesh_ptr(&mesh), 
 	dielectric_ratio(0), 
 	f(0), h(0),
-#ifndef PREHYDROPHOBIC
 	he(0), lj(0),
-#endif // PREHYDROPHOBIC
 	vertex_idx(_vertex_idx)
 {
     // mutex (thread-locking for generating quad points)
@@ -69,10 +67,8 @@ BasicNodePatch::BasicNodePatch(
     
     force_coefficient_f = Vector(-1,-1,-1);
     force_coefficient_h = Vector(-1,-1,-1);
-#ifndef PREHYDROPHOBIC
 	ch_idx = mesh_ptr->get_num_charges(true);	// invalid
 	hydrophobicity = 0.0;						// means no effect
-#endif // PREHYDROPHOBIC
     
     const Vertex& v = mesh.get_vertex(vertex_idx);
     node = v;
@@ -82,11 +78,7 @@ BasicNodePatch::BasicNodePatch(
     planar_area = 0.0;
 
     for (const auto& tidx: v.get_triangle_indices()) {
-#ifdef PRETRIPTR
-        const BasicTriangle& tri = *(mesh.get_triangle_ptr(tidx));
-#else
         const Triangle& tri = mesh.get_triangle_ptr(tidx);
-#endif // PRETRIPTR
         planar_area += tri.get_planar_area() / 3.0;
         //bezier_area += tri.get_area() / 3.0;
     }
@@ -156,19 +148,15 @@ void BasicNodePatch::copy(const BasicNodePatch& other) {
     dielectric_ratio = other.dielectric_ratio;
     f = other.f;
     h = other.h;
-#ifndef PREHYDROPHOBIC
     he = other.he;
     lj = other.lj;
-#endif // PREHYDROPHOBIC
     energy_coefficient_f = other.energy_coefficient_f;
     energy_coefficient_h = other.energy_coefficient_h;
     force_coefficient_f = other.force_coefficient_f;
     force_coefficient_h = other.force_coefficient_h;
     gc = other.gc;
-#ifndef PREHYDROPHOBIC
 	ch_idx = other.ch_idx;
 	hydrophobicity = other.hydrophobicity;
-#endif // PREHYDROPHOBIC
 
     node = other.node;
     centroid = other.centroid;
@@ -311,16 +299,9 @@ boost::shared_ptr<QuadList> BasicNodePatch::generate_points(
 
     const Mesh& mesh = get_ref_mesh();
     const Vertex& v = mesh.get_vertex(vertex_idx);
-#ifdef PRETRIPTR
-    const std::vector<BasicTriangle*>& triangles = mesh.get_triangle_ptrs();
-#endif // PRETRIPTR
 
     for (const auto& tidx: v.get_triangle_indices()) {
-#ifdef PRETRIPTR
-        const BasicTriangle& tri = *(triangles[tidx]);
-#else
 		const Triangle& tri = mesh.get_triangle_ptr(tidx);
-#endif // PRETRIPTR
  
         try {
             tri.get_constant_basis_quad_points(v, *quads, rule, subdivides);
@@ -343,17 +324,10 @@ BasicNodePatch::get_edge_points(std::vector<PointNormal>& edge_points) const
 {
     const Mesh& mesh = get_ref_mesh();
     const Vertex& v = mesh.get_vertex(vertex_idx);
-#ifdef PRETRIPTR
-    const std::vector<BasicTriangle*>& triangles = mesh.get_triangle_ptrs();
-#endif // PRETRIPTR
 
     // create list of vertices in order which define the node patch connectivity
     for (const auto& tidx: v.get_triangle_indices()) {
-#ifdef PRETRIPTR
-        const Triangle& tri = dynamic_cast<Triangle&>(*(triangles[tidx]));
-#else
 		const Triangle& tri = mesh.get_triangle_ptr(tidx);
-#endif // PRETRIPTR
 
         Vector a;
         Vector b;
@@ -406,20 +380,8 @@ NodePatch::NodePatch(
     const Quaternion& rot_from_old_to_new = minst.get_rotation();
     const Vector& centre_of_rotation_new_frame = minst.get_xyz_offset();
     
-#ifndef PRE_LOCAL_MOVES
 	change_coordinate_frame(centre_of_rotation_old_frame, rot_from_old_to_new,
 							centre_of_rotation_new_frame);
-#else //  PRE_LOCAL_MOVES
-    // convert reference (local) coordinates to universe coords
-    Vector::change_coordinate_frame(centre_of_rotation_old_frame, rot_from_old_to_new, centre_of_rotation_new_frame);
-    BasicNodePatch::node.change_coordinate_frame(centre_of_rotation_old_frame, rot_from_old_to_new, centre_of_rotation_new_frame);
-    BasicNodePatch::centroid.change_coordinate_frame(centre_of_rotation_old_frame, rot_from_old_to_new, centre_of_rotation_new_frame);
-    BasicNodePatch::normal.apply_rotation(rot_from_old_to_new); // normal vector just gets rotated
-    BasicNodePatch::alt_normal.apply_rotation(rot_from_old_to_new);
-    change_coordinate_frame(*BasicNodePatch::single_qual_pt);
-    change_coordinate_frame(*BasicNodePatch::single_quad_pt);
-    
-#endif //  PRE_LOCAL_MOVES
 
     // set the number of qual/quad points according to the mesh instance
     BasicNodePatch::quad_points_per_triangle
@@ -437,7 +399,6 @@ const Mesh& NodePatch::get_ref_mesh() const {
     return minst.get_ref_mesh();
 }
 
-#ifndef PRE_LOCAL_MOVES
 void
 NodePatch::change_coordinate_frame(
 	const Vector& centre_of_rotation_old_frame,
@@ -515,18 +476,5 @@ void NodePatch::change_coordinate_frame(QuadList& qps) const {
 	change_ql_coordinate_frame(qps, centre_of_rotation_old_frame,
 			rot_from_old_to_new, centre_of_rotation_new_frame);
 }
-#else // PRE_LOCAL_MOVES
-void NodePatch::change_coordinate_frame(QuadList& qps) const
-{
-    const Vector& centre_of_rotation_old_frame = minst.get_ref_mesh().get_centre();
-    const Quaternion& rot_from_old_to_new = minst.get_rotation();
-    const Vector& centre_of_rotation_new_frame = minst.get_xyz_offset();
-    for (QuadList::iterator it=qps.begin(), end=qps.end(); it != end; ++it)
-    {
-        it->change_coordinate_frame(centre_of_rotation_old_frame, rot_from_old_to_new, centre_of_rotation_new_frame);
-    }
-}
-
-#endif // PRE_LOCAL_MOVES
 
 

@@ -27,17 +27,12 @@
 
 namespace fs = boost::filesystem;	// Easier to swap to std::filesystem in '17
 
-// NB PRETRIPTR this would have copied triangle_ptrs vector pointing to same
-// triangles;  so here the shared_ptrs are copied with same result but safer
-// on destruction.  It is not clear why a Mesh copy would ever be needed.
 Mesh::Mesh(const Mesh& other) {
     vertices.reserve(other.vertices.size());
     triangles.reserve(other.triangles.size());
     node_patches.reserve(other.node_patches.size());
     charges.reserve(other.charges.size());
 
-	// NB2 Then all this would have happened by default? So delete constructor?
-	// Which would also allow a default move constructor with !PRETRIPTR?
     vertices.insert
 		(vertices.end(), other.vertices.begin(), other.vertices.end());
     triangles.insert
@@ -45,13 +40,11 @@ Mesh::Mesh(const Mesh& other) {
     node_patches.insert(node_patches.end(),
 					    other.node_patches.begin(), other.node_patches.end());
     charges.insert(charges.end(), other.charges.begin(), other.charges.end());
-#ifndef PREHYDROPHOBIC
     allCharges.insert(allCharges.end(),
 					  other.allCharges.begin(), other.allCharges.end());
     allChargesMap.insert(other.allChargesMap.cbegin(),
 						 other.allChargesMap.cend());
 	nppc.insert(nppc.end(), other.nppc.begin(), other.nppc.end());
-#endif // PREHYDROPHOBIC
 
     net_charge = other.net_charge;
     centre = other.centre;
@@ -59,36 +52,17 @@ Mesh::Mesh(const Mesh& other) {
     done_energy_precalcs = other.done_energy_precalcs;
 }
 
-#ifdef PRETRIPTR
-Mesh::~Mesh() {
-    // delete the dynamically allocated triangles
-    for (size_t ii=0; ii < triangle_ptrs.size(); ++ii) {
-        delete triangle_ptrs[ii];
-    }
-}
-#endif // PRETRIPTR
-
 Mesh::Mesh(const std::string& mesh_filename,
            const std::string& xyzqr_filename,
-#ifdef PREVOLHE
-           bool force_planar
-		  ) : done_energy_precalcs(false)		
-#else
            bool force_planar,
 		   bool skip_hydro,
 		   bool skip_precalcs
 		  ) : done_energy_precalcs(skip_precalcs)
-#endif // PREVOLHE
 {
 	fs::path mesh_path{mesh_filename};
     init_mesh(mesh_path);
 	fs::path xyzqr_path{xyzqr_filename};
     init_charges(xyzqr_path);
-    
-    // default to charge centroid...
-#ifdef DELETED  // This is already done in init_charges and this does nothing!
-    calculate_charges_centroid();
-#endif
     
     if (force_planar) {
         create_bezier_triangles<Triangle>();
@@ -102,27 +76,17 @@ Mesh::Mesh(const std::string& mesh_filename,
     // set maximum radius of any surface point from the centre
     radius = calculate_radius();
 
-#ifndef PREVOLHE
 	// Assign hydrophobicities and LJ parameters
 	if (!skip_hydro)
-#endif // PREVOLHE
-#ifndef PREHYDROPHOBIC
 		init_other_energies();
-#endif // PREHYDROPHOBIC
 
-#ifndef PREVOLHE
 	// Assign electrostatic coefficients, if needed
 	if (!skip_precalcs)
-#endif // PREVOLHE
 		init_energy_precalcs();
 }
 
 void Mesh::init(const std::string& mesh_filename,
-#ifdef PREVOLHE
-                bool force_planar)
-#else
                 bool force_planar, bool skip_hydro, bool skip_precalcs)
-#endif // PREVOLHE
 {
     // decompress the mesh tarball to temp folder
     try {
@@ -130,25 +94,19 @@ void Mesh::init(const std::string& mesh_filename,
 
         // get the paths of the extracted files
         fs::path mesh_filename = mesh_tar.get_mesh_filename();
-#ifndef PREVOLHE
         fs::path mesh2_filename = mesh_tar.get_mesh2_filename();
-#endif // PREVOLHE
         fs::path xyzqr_filename = mesh_tar.get_xyzqr_filename();
         fs::path centre_filename = mesh_tar.get_centre_filename();
         fs::path energies_filename = mesh_tar.get_energies_filename();
-#ifndef PREVOLHE
         fs::path energies2_filename = mesh_tar.get_energies2_filename();
-#endif // PREVOLHE
 
         // init the mesh using the pre-calculated files (nodes and quads etc.)
         init_mesh(mesh_filename);
-#ifndef PREVOLHE
 		if (!mesh2_filename.empty()) {
 			mesh2 = std::make_shared<Mesh>(mesh2_filename.string(),
 							xyzqr_filename.string(), force_planar, true, true);
             mesh2->read_energy_precalcs(energies2_filename);    
 		}
-#endif // PREVOLHE
         init_charges(xyzqr_filename);
         init_centre(centre_filename);
 
@@ -163,9 +121,7 @@ void Mesh::init(const std::string& mesh_filename,
 	
     	// read energy precalcs from data file
         if (force_planar) {
-#ifndef PREHYDROPHOBIC
 			init_other_energies();
-#endif // PREHYDROPHOBIC
             init_energy_precalcs();
         }
         else {
@@ -206,7 +162,6 @@ void Mesh::init(const std::string& mesh_filename,
 //	fout.close();
 }
 
-#ifndef PREVOLHE
 Mesh::Mesh(const Mesh& m, const std::vector<Vertex>& vertex_list, 
 		const IdxListN<2>& edge_list, const IdxListN<3>& triangle_list,
 		bool force_planar, bool skip_precalcs)
@@ -214,11 +169,9 @@ Mesh::Mesh(const Mesh& m, const std::vector<Vertex>& vertex_list,
 	// Copy the parent charge information
     charges.reserve(m.charges.size());
     charges.insert(charges.end(), m.charges.begin(), m.charges.end());
-#ifndef PREHYDROPHOBIC
     allCharges.insert(allCharges.end(),
 					  m.allCharges.begin(), m.allCharges.end());
     allChargesMap.insert(m.allChargesMap.cbegin(), m.allChargesMap.cend());
-#endif // PREHYDROPHOBIC
     net_charge = m.net_charge;
     centre = m.centre;  // charges centre
 
@@ -248,7 +201,6 @@ Mesh::Mesh(const Mesh& m, const std::vector<Vertex>& vertex_list,
 	init_other_energies();
 	if (!skip_precalcs) init_energy_precalcs();
 }
-#endif // PREVOLHE
 
 std::vector<Charge> Mesh::get_ecm_charges(
 	const std::string& ecm_filename,
@@ -311,15 +263,12 @@ void Mesh::init_mesh(void) {
     // generally useful for vertices to have coherent vertex indices
     reorder_vertex_triangles();
     
-#ifndef PREVOLHE
     Uint ctr = 0;
 	constexpr unsigned int perm[] = { 1, 2, 0 };
-#endif // PREVOLHE
     total_planar_area = 0;
 	e2tMap.reserve(3*triangles.size()/2);
 	v2tMap.reserve(3*triangles.size());
     for (const auto& tri: triangles) {
-#ifndef PREVOLHE
 		// Update vertex and edge to triangle maps - anticlockwise ordering
 		Multiplet<3> va = {tri.get_v1_idx(),tri.get_v2_idx(),tri.get_v3_idx()};
 		for (int i = 0; i < 3; i++) {
@@ -336,7 +285,6 @@ void Mesh::init_mesh(void) {
 			for (int j = 0; j < 3; j++) ia[j] = perm[ia[j]];
 		}
 		ctr++;
-#endif // PREVOLHE
 
 		// and set the total planar area (flat triangles)
         total_planar_area += tri.get_planar_area();
@@ -346,9 +294,6 @@ void Mesh::init_mesh(void) {
 
 void Mesh::init_charges(const fs::path& xyzqr_filename) {
     // read the charges using utility function in Charge class
-#ifdef PREHYDROPHOBIC
-    net_charge = Charge::read_charges_from_file(xyzqr_filename, charges);
-#else
     net_charge = Charge::read_charges_from_file(xyzqr_filename, allCharges,
 												false);
 	// Build a key map to find the charge indices later and
@@ -361,8 +306,6 @@ void Mesh::init_charges(const fs::path& xyzqr_filename) {
 		if (ch.charge != 0) charges.push_back(ch);
 	}
 	
-#endif // PREHYDROPHOBIC
-
     //std::cout << "Added " << charges.size() << " charges." << std::endl;
     centre = calculate_charges_centroid();
     //std::cout << centre << std::endl;
@@ -702,7 +645,6 @@ void Mesh::init_fh_vals(const fs::path& fh_filename) {
     fh_file.close();
 }
 
-#ifndef PREHYDROPHOBIC
 void Mesh::init_other_energies(void) {
     // first get the bounding cube for the mesh
     Vector centre;
@@ -784,7 +726,6 @@ void Mesh::init_other_energies(void) {
 		ctr++;
 	}
 }
-#endif // PREHYDROPHOBIC
 
 void Mesh::init_energy_precalcs() {
 
@@ -998,11 +939,9 @@ void Mesh::read_energy_precalcs(
 		 it != end; ++it)
     {
         BasicNodePatch& np = *it;
-#ifndef PREHYDROPHOBIC
 		// Default the values that might not be present
 		np.hydrophobicity = 0.0;
 		np.ch_idx = allCharges.size();
-#endif // PREHYDROPHOBIC
 		std::getline(energies_file, str);
 		is.clear();	// Needed to reset after reading past end of string
 		is.str(str);
@@ -1010,14 +949,10 @@ void Mesh::read_energy_precalcs(
            >> np.force_coefficient_f.x >> np.force_coefficient_f.y
 		   >> np.force_coefficient_f.z 
            >> np.force_coefficient_h.x >> np.force_coefficient_h.y
-#ifdef PREHYDROPHOBIC
-		   >> np.force_coefficient_h.z;
-#else
 		   >> np.force_coefficient_h.z
 		   >> np.hydrophobicity >> np.ch_idx;
 		if (np.ch_idx >= nppc.size()) nppc.resize(np.ch_idx+1);
 		nppc[np.ch_idx]++;				// Number of NP's for this charge
-#endif // PREHYDROPHOBIC
     }
 
     energies_file.close();
@@ -1332,11 +1267,7 @@ void Mesh::calculate_surface_integral_forces(
         // will take advantage of the parametric representation of
         // each type, so don't need to worry here about what type
         // it actually is.
-#ifdef PRETRIPTR
-        const Triangle& tri = dynamic_cast<Triangle&>(*(triangle_ptrs[tctr])); 
-#else
         const Triangle& tri = *(triangle_ptrs[tctr]);
-#endif // PRETRIPTR
 
         const Vertex& v1 = vertices[tri.v1_idx];
         const Vector& n1 = v1.normal;
@@ -1703,11 +1634,7 @@ void Mesh::create_node_patches() {
 
 	double planar_area = 0;
 	total_bezier_area = 0.0;
-#ifdef PRETRIPTR
-	for (std::vector<BasicTriangle*>::const_iterator
-#else
 	for (std::vector<std::shared_ptr<Triangle>>::const_iterator
-#endif // PRETRIPTR
 			it=triangle_ptrs.cbegin(), end=triangle_ptrs.cend();
 		 it != end; ++it)
 	{
@@ -1963,7 +1890,6 @@ Vector Mesh::calc_reaction_field_force(const Offsets& offs,
 }
 #endif // if 0
 
-#ifndef PREVOLHE
 const Triangle* Mesh::find_triangle(Uint v1, Uint v2, Uint v3) const {
 	Multiplet<3> va = {v1, v2, v3};
 	auto tri = v2tMap.find(va);
@@ -1972,7 +1898,6 @@ const Triangle* Mesh::find_triangle(Uint v1, Uint v2, Uint v3) const {
 	else
 		return nullptr;
 }
-#endif // PREVOLHE
 
 // Add a mesh to the list
 boost::shared_ptr<ListedMesh>

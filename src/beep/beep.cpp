@@ -35,12 +35,10 @@ BEEP::BEEP(const ConfigFile& config,
 	cmdline_qual_points_per_triangle(cmdline_qual_points), 
 	cmdline_kappa(_cmdline_kappa),
 	force_planar(planar),
-#ifdef PREHYDROPHOBIC
 	resolve(true),
 	previd(1),	// Will be invalid on BEEP creation (as required)
 	prevloc(Vector(0,0,0)),
 	unrot(Quaternion(1,0,0,0)),
-#endif // PREHYDROPHOBIC
 	skipping_precalcs(false)
 {
     init(config);
@@ -56,12 +54,10 @@ BEEP::BEEP(const std::string& config_filename, bool planar, bool read_fh) :
     cmdline_qual_points_per_triangle(-1), 
     cmdline_kappa(-1),
     force_planar(planar),
-#ifdef PREHYDROPHOBIC
 	resolve(true),
 	previd(1),	// Will be invalid on BEEP creation (as required)
 	prevloc(Vector(0,0,0)),
 	unrot(Quaternion(1,0,0,0)),
-#endif // PREHYDROPHOBIC
     skipping_precalcs(false)
 {
     // parse xml config
@@ -116,9 +112,7 @@ BEEP::BEEP(const std::string& config_filename, bool planar, bool read_fh) :
 }
 
 void BEEP::init(const ConfigFile& config) {
-#ifndef PREHYDROPHOBIC
 	resolve = true;	// BEEP needs to solve
-#endif
     for (ConfigFile::MeshLibrary::const_iterator
 			it=config.mesh_library.cbegin(), end=config.mesh_library.cend();
 		 it != end; ++it)
@@ -215,9 +209,7 @@ Mesh& BEEP::load_library_mesh(const std::string& mtz_filename) {
 }
 
 void BEEP::clear_mesh_instances(unsigned int start, int end) {
-#ifndef PREHYDROPHOBIC
 	resolve = true;	// BEEP needs to solve
-#endif
 	// This allows python-like end-point specification with +1 increment
 	if (start >= meshes.size()) return;  // Silently ignore (as if already done)
 	if (end < 0) end = meshes.size() + 1 + end;
@@ -252,13 +244,11 @@ MeshInstance& BEEP::insert_mesh_instance(
 	MeshInstance& m = *meshes.add(mesh_lib_id, id, offset, rotation, 
 								  protein_dielectric, Dsolvent,
 								  num_quad_points, num_qual_points);
-#ifndef PREHYDROPHOBIC
 	resolve = true;				// BEEP needs to solve
 	m.update_energy(meshes);	// Revise non-electrostatic energies
 
 	// Store the reversion data
 	previd = meshes.size();		// No reversion is possible from an insert
-#endif
 	return m;
 }
 
@@ -269,7 +259,6 @@ MeshInstance& BEEP::move_mesh_instance(
 {
 	static const Quaternion no_rotation{Quaternion(1,0,0,0)};
 
-#ifdef MI_MOVE
     // check that the mesh id is valid
     if (id >= meshes.size()) {
         std::cerr << "Bad value for mesh instance_id: " << id
@@ -283,11 +272,7 @@ MeshInstance& BEEP::move_mesh_instance(
 
 	// Make the move
 	m.move(offset, rotation);
-#else  // MI_MOVE
-	MeshInstance& m = *meshes.move(id, offset, rotation,
-									protein_dielectric, Dsolvent);
-#endif // MI_MOVE
-#ifndef PREHYDROPHOBIC
+
 	// Energy updates are required
 	resolve = true;		// BEEP needs to solve
 	if (id == previd && offset == prevloc && rotation == unrot) {
@@ -301,7 +286,6 @@ MeshInstance& BEEP::move_mesh_instance(
 	previd = id;
 	prevloc = loc;				// offset is absolute location
 	unrot = rotation.inverse();	// but rotation is relative
-#endif
 	return m;
 }
 
@@ -339,7 +323,6 @@ void BEEP::create_kinemage(
     buf_h << "@trianglelist {hvals} \n";
     buf_sf << "\n@trianglelist {silent-fvals} off\n";
     buf_sh << "\n@trianglelist {silent-hvals} \n";
-#ifndef PREHYDROPHOBIC
     std::ostringstream buf_hy, buf_s, buf_e, buf_he, buf_lj;
     buf_hy << "\n@trianglelist {hydrophobicities} off\n";
     buf_s << "\n@trianglelist {Lennard-Jones-sigma} off\n";
@@ -347,20 +330,13 @@ void BEEP::create_kinemage(
     buf_he << "\n@trianglelist {Hydrophobic Effect} off\n";
     buf_lj << "\n@trianglelist {Lennard-Jones} off\n";
 	double scales[7] = {0.0, 0.0, 0.0, 0.0, 0.0, fscale, hscale};
-#endif // PREHYDROPHOBIC
     for (const auto& spmi: meshes) {
         if (spmi->isSilent() == false)
-#ifdef PREHYDROPHOBIC
-            spmi->kinemage_fh_vals(fscale, hscale, num_colours, buf_f, buf_h);
-        else
-            spmi->kinemage_fh_vals(fscale, hscale, num_colours, buf_sf, buf_sh);
-#else
             spmi->kinemage_vals(num_colours, buf_hy, buf_s, buf_e,
 								buf_he, buf_lj, buf_f, buf_h, scales);
 		else
             spmi->kinemage_vals(num_colours, buf_hy, buf_s, buf_e,
 								buf_he, buf_lj, buf_sf, buf_sh, scales);
-#endif // PREHYDROPHOBIC
     }
 
     std::ostringstream charge_buf;
@@ -382,13 +358,11 @@ void BEEP::create_kinemage(
     kin_out << buf_sf.str() << std::endl;
     kin_out << buf_sh.str() << std::endl;
     kin_out << charge_buf.str() << std::endl;
-#ifndef PREHYDROPHOBIC
     kin_out << buf_hy.str() << std::endl;
     kin_out << buf_s.str() << std::endl;
     kin_out << buf_e.str() << std::endl;
     kin_out << buf_he.str() << std::endl;
     kin_out << buf_lj.str() << std::endl;
-#endif // PREHYDROPHOBIC
     kin_out.close();
 }
 
@@ -441,9 +415,7 @@ std::string BEEP::benchmark() {
 }
 
 RunInfo BEEP::solve(double gmres_stop_criteria, int max_iterations) {
-#ifndef PREHYDROPHOBIC
 	resolve = false;	// BEEP is now calculating electrostatics...
-#endif
     vanilla_fmm_timer.zero();
     bem_fmm_timer.zero();
     
@@ -611,14 +583,10 @@ double BEEP::calculate_energies() {
     {
         const MeshInstance& m = **mit;
         if (m.isSilent()) continue;
-#ifdef PREHYDROPHOBIC
-        total_E += m.calculate_energy(kappa, &f_lhs[offset], &h_lhs[offset]);
-#else
 		// If resolve required, then do not calculate electrostatics...
         total_E += m.calculate_energy(!resolve, kappa,
 									  &f_lhs[offset], &h_lhs[offset]);
 
-#endif // PREHYDROPHOBIC
         offset += m.get_num_node_patches();
     }
     return total_E;

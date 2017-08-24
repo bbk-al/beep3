@@ -35,9 +35,7 @@ MeshInstance::MeshInstance(
 		silent(_silent),
 		xyz_offset(offset),
 		rotation(rot),
-#ifndef PREHYDROPHOBIC
 		psel(0),
-#endif // PREHYDROPHOBIC
 		quad_points_per_triangle(num_quad_points),
 		qual_points_per_triangle(num_qual_points)
 {
@@ -71,11 +69,7 @@ void MeshInstance::init()
 
     // set Charges
     charges.clear();
-#ifdef PREHYDROPHOBIC
-    const std::vector<Charge>& library_charges = mesh.get_charges();
-#else
     const std::vector<Charge>& library_charges = mesh.get_charges(true);
-#endif // PREHYDROPHOBIC
     for (std::vector<Charge>::const_iterator
 			it=library_charges.cbegin(), end=library_charges.cend();
 		 it != end; ++it)
@@ -83,36 +77,14 @@ void MeshInstance::init()
 		boost::shared_ptr<Charge> ptr(
 			new Charge(*it, mesh.get_centre(), rotation, xyz_offset)
 		);
-#ifdef PREHYDROPHOBIC
-		charges.push_back(ptr);
-#else
 		// Important: the same underlying charge is referenced twice!
 		allCharges.push_back(ptr);	// Copy
 		if ((*it).charge != 0) charges.push_back(std::move(ptr));	// Move
-#endif // PREHYDROPHOBIC
     }
     
     // set radius
     radius = mesh.get_radius();
-
-#ifdef DELETED
-    // create a simple octree of the mesh instance (for collision / grid checks)
-	reset_mesh_tree();
-#endif // DELETED
 }
-
-#ifdef DELETED
-// redundant as pt_is_internal uses different method
-void MeshInstance::reset_mesh_tree() {
-    mesh_tree.reset(new Octree< Node<BasicNodePatch>, BasicNodePatch >
-						(10, xyz_offset, radius*4.) );
-    for (PatchList::iterator it=patches.begin(), end=patches.end();
-		 it != end; ++it)
-    {
-        mesh_tree->add(*it);
-    }
-}
-#endif
 
 static bool pt_triangle(const Vector& pt, const Vector* tv, int zdir,
 						meshing::PtSet& hitVertices) {
@@ -201,13 +173,6 @@ double MeshInstance::get_potential_at_external_pt(
 MeshInstance&
 	MeshInstance::move(const Vector& translate, const Quaternion& rotate)
 {
-#ifdef PRE_LOCAL_MOVES		//defined in node_patch.h and TODO remove #ifdef
-	std::cerr << "MeshInstance::move() has not been implemented" << std::endl;
-	// change the coordinate frame for the mesh and charges
-	// and reset the octree values
-	// Update current position and rotation
-
-#else // PRE_LOCAL_MOVES
 std::cout << "MeshInstance::move from " << xyz_offset << " to " << translate << std::endl;
 	for (auto& spbnp: patches) {
 		// Change node patch coordinates
@@ -229,16 +194,9 @@ std::cout << "MeshInstance::move from " << xyz_offset << " to " << translate << 
     xyz_offset = translate;
     rotation *= rotate;
 
-#ifdef DELETED
-    // create a simple octree of the mesh instance (for collision / grid checks)
-	reset_mesh_tree();
-#endif // DELETED
-	
-#endif // PRE_LOCAL_MOVES
 	return *this;
 }
 
-#ifndef PREHYDROPHOBIC
 // Local values and private methods to calculate non-electrostatic energies
 // Lambda to test if range is too great to be worth fiddling with
 static auto toofar = [](Vector& v, double lim) noexcept -> bool {
@@ -251,10 +209,10 @@ static constexpr double P5olim{8.55};		// HE P5 Outer limit
 //#define P5POLY
 #ifdef P5POLY
 static constexpr double P5ilim{3.64356};	// HE P5 Inner limit
-#else
+#else  // P5POLY
 static constexpr double P5mlim{6.8};		// HE P5 Middle limit
 static constexpr double P5ilim{4.3};		// HE P5 Inner limit
-#endif
+#endif  // P5POLY
 static constexpr double LJolim{2.5};		// LJ Outer limit
 static constexpr double LJilim{2.3};		// LJ Inner limit
 static constexpr double ELIM{std::max<double>(P5olim, 3.4*LJolim)};	//sigma<3.4 
@@ -295,11 +253,11 @@ static double P5(double r, double hydro) {
 	constexpr double l[] = {-0.1381608, 0.0395076 }; // Linear coefficients
 	constexpr double q[] = {-3.256875, 2.82834, -0.957078, 0.158458,
 							-0.0128423, 0.0004076924}; // Quintic coeffs
-#else
+#else  // P5POLY
 	constexpr double l[] = {-0.4144824, 0.1185228 }; // Linear coefficients
 	constexpr double qm[] = {0.0245255, -4.0755e-3};  // Quadratic-middle coeffs
 	constexpr double qo[] = {0.0261969, -3.0642e-3};  // Quadratic-outer coeffs
-#endif
+#endif  // P5POLY
 
 	// Return value
 	double e = 0.0;
@@ -313,12 +271,12 @@ static double P5(double r, double hydro) {
 #ifdef P5POLY
 	else // (P5ilim < r < P5olim)
 		e = ((((q[5]*r + q[4])*r + q[3])*r + q[2])*r + q[1])*r + q[0];
-#else
+#else  // P5POLY
 	else if (r <= P5mlim)
 		e = (qm[1]*r + qm[0])*r;
 	else // P5mlim < r < P5olim
 		e = (qo[1]*r + qo[0])*r;
-#endif
+#endif  // P5POLY
 
 	// Adjust by strength of hydrophobicity - may have been smoothed here
 	if (hydro != -0.5) e *= (-2)*hydro;
@@ -867,21 +825,13 @@ void MeshInstance::revert_energy(MeshInstanceList& mis) {
 	psel = 1-psel;
 }
 
-#endif // PREHYDROPHOBIC
-     
 double MeshInstance::calculate_energy(
-#ifndef PREHYDROPHOBIC
 	bool electrostatics,
-#endif // PREHYDROPHOBIC
 	double kappa,
 	double fvals[],
 	double hvals[]) const
 {
     // Dsolvent and Dprotein should have been set via set_dielectrics()
-#ifdef PREHYDROPHOBIC
-    double E = mesh_ptr->calculate_energy(kappa, Dprotein, Dsolvent,
-	                                      fvals, hvals);
-#else
 	double E = 0.0;
 	if (electrostatics)
 		E = mesh_ptr->calculate_energy(kappa, Dprotein, Dsolvent,
@@ -902,7 +852,6 @@ double MeshInstance::calculate_energy(
 		}
 		std::cout << name[p] << E-F;
 	}
-#endif // PREHYDROPHOBIC
 	std::cout << " total=" << E << std::endl;
     return E;
 }
@@ -943,11 +892,7 @@ void MeshInstance::calculate_forces(
     (dbf).apply_rotation(rotation);
 }
 
-#ifdef PREHYDROPHOBIC
-	static constexpr unsigned int kin_nvals = 2;
-#else
 	static constexpr unsigned int kin_nvals = 7;
-#endif // PREHYDROPHOBIC
 
 void MeshInstance::kinemage_fh_vals(
 	double fscale,
@@ -956,48 +901,35 @@ void MeshInstance::kinemage_fh_vals(
 	std::ostringstream& buf_f,
 	std::ostringstream& buf_h) const
 {
-#ifdef PREHYDROPHOBIC
-	double s[kin_nvals] = {fscale, hscale};
-	kinemage_vals(num_colours, buf_f, buf_h, s);
-#else
 	double s[kin_nvals] = {0.0, 0.0, 0.0, 0.0, 0.0, fscale, hscale};
 	std::ostringstream buf_hy, buf_s, buf_e, buf_he, buf_lj;
 	kinemage_vals(num_colours, buf_hy, buf_s, buf_e, buf_he, buf_lj,
 				  buf_f, buf_h, s);
-#endif // PREHYDROPHOBIC
 }
 
 void MeshInstance::kinemage_vals(
 	int num_colours,
-#ifndef PREHYDROPHOBIC
 	std::ostringstream& buf_hy,
 	std::ostringstream& buf_s,
 	std::ostringstream& buf_e,
 	std::ostringstream& buf_he,
 	std::ostringstream& buf_lj,
-#endif // PREHYDROPHOBIC
 	std::ostringstream& buf_f,
 	std::ostringstream& buf_h) const
 {
 	double s[kin_nvals]{};
-#ifdef PREHYDROPHOBIC
-	kinemage_vals(num_colours, buf_f, buf_h, s);
-#else
 	kinemage_vals(num_colours, buf_hy, buf_s, buf_e, buf_he, buf_lj,
 				  buf_f, buf_h, s);
-#endif // PREHYDROPHOBIC
 }
 
 template<unsigned int S>
 void MeshInstance::kinemage_vals(
 	int num_colours,
-#ifndef PREHYDROPHOBIC
 	std::ostringstream& buf_hy,
 	std::ostringstream& buf_s,
 	std::ostringstream& buf_e,
 	std::ostringstream& buf_he,
 	std::ostringstream& buf_lj,
-#endif // PREHYDROPHOBIC
 	std::ostringstream& buf_f,
 	std::ostringstream& buf_h,
 	double (&scale)[S]) const
@@ -1017,9 +949,6 @@ void MeshInstance::kinemage_vals(
 	}
     for (size_t np_ctr = 0; np_ctr < npatches; ++np_ctr) {
         const NodePatch& np = dynamic_cast<NodePatch&>(*(patches[np_ctr]));
-#ifdef PREHYDROPHOBIC
-		double value[] = {np.f, np.h};
-#else
 		double sig = 0.0, eps = 0.0;
 		if (np.ch_idx < allCharges.size()) {
 			Charge& ch = *(allCharges[np.ch_idx]);
@@ -1028,7 +957,6 @@ void MeshInstance::kinemage_vals(
 		}
 		double value[] = {np.hydrophobicity, sig, eps,
 						  np.he, np.lj, np.f, np.h};
-#endif // PREHYDROPHOBIC
 		for (int i = 0; i < kin_nvals; i++)
 			if (getscale[i])
 				scale[i] = std::max<double>(scale[i], fabs(value[i]));
@@ -1043,10 +971,6 @@ std::cout << __PRETTY_FUNCTION__ << " scale " << i << " is " << scale[i] << std:
     for (size_t np_ctr = 0; np_ctr < patches.size(); ++np_ctr) {
         const NodePatch& np = dynamic_cast<NodePatch&>(*(patches[np_ctr]));
         
-#ifdef PREHYDROPHOBIC
-		double value[] = {np.f, np.h};
-		std::ostringstream *buf[] = {&buf_f, &buf_h};
-#else
 		double sig = 0.0, eps = 0.0;
 		if (np.ch_idx < allCharges.size()) {
 			Charge& ch = *(allCharges[np.ch_idx]);
@@ -1057,7 +981,6 @@ std::cout << __PRETTY_FUNCTION__ << " scale " << i << " is " << scale[i] << std:
 						  np.he, np.lj, np.f, np.h};
 		std::ostringstream *buf[] = {&buf_hy, &buf_s, &buf_e,
 									 &buf_he, &buf_lj, &buf_f, &buf_h};
-#endif // PREHYDROPHOBIC
         std::string name[kin_nvals];
 
         // figure out the colour name corresponding to the values
